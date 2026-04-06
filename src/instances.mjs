@@ -1,0 +1,405 @@
+import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import net from "node:net";
+import os from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
+
+const execFileAsync = promisify(execFile);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const managerRoot = path.resolve(__dirname, "..");
+const composeFile = path.join(managerRoot, "docker-compose.instance.yml");
+const defaultAmbrosiaSourceDir = path.join(os.homedir(), "code", "ambrosia");
+const dataRoot = process.env.INSTANCE_DATA_DIR || path.join(managerRoot, ".ambrosia-instances");
+const registryPath = path.join(dataRoot, "instances.json");
+
+const PORT_STARTS = {
+  apiPort: 9155,
+  clientPort: 3001,
+  phoenixPort: 9741,
+};
+
+function createProgressReporter(reportProgress) {
+  return typeof reportProgress === "function" ? reportProgress : () => {};
+}
+
+function createHttpError(statusCode, message) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
+
+function sanitizeName(input) {
+  return String(input || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+}
+
+async function ensureDataRoot() {
+  await mkdir(dataRoot, { recursive: true });
+
+  try {
+    await access(registryPath);
+  } catch {
+    await writeFile(registryPath, JSON.stringify({ instances: [] }, null, 2));
+  }
+}
+
+async function readRegistry() {
+  await ensureDataRoot();
+  return JSON.parse(await readFile(registryPath, "utf8"));
+}
+
+async function writeRegistry(registry) {
+  await writeFile(registryPath, JSON.stringify(registry, null, 2));
+}
+
+function getInstanceDirectory(instanceId) {
+  return path.join(dataRoot, instanceId);
+}
+
+function getEnvPath(instanceId) {
+  return path.join(getInstanceDirectory(instanceId), "instance.env");
+}
+
+function getProjectName(instanceId) {
+  return `ambrosia-${instanceId}`;
+}
+
+function getAmbrosiaSourceDir() {
+  return path.resolve(process.env.AMBROSIA_SOURCE_DIR || defaultAmbrosiaSourceDir);
+}
+
+async function ensureAmbrosiaSourceDir() {
+  const sourceDir = getAmbrosiaSourceDir();
+  const requiredPaths = [path.join(sourceDir, "server"), path.join(sourceDir, "client")];
+
+  for (const requiredPath of requiredPaths) {
+    try {
+      await access(requiredPath);
+    } catch {
+      throw createHttpError(
+        500,
+        `AMBROSIA_SOURCE_DIR is invalid. Expected to find ${requiredPath}. Set AMBROSIA_SOURCE_DIR to your Ambrosia repo path.`,
+      );
+    }
+  }
+
+  return sourceDir;
+}
+
+function getLocalNetworkIp() {
+  const interfaces = os.networkInterfaces();
+
+  for (const entries of Object.values(interfaces)) {
+    for (const entry of entries || []) {
+      if (entry.family === "IPv4" && !entry.internal) {
+        return entry.address;
+      }
+    }
+  }
+
+  return "127.0.0.1";
+}
+
+function getUrls(instance) {
+  const host = getLocalNetworkIp();
+
+  return {
+    frontendUrl: `http://${host}:${instance.clientPort}`,
+    apiUrl: `http://${host}:${instance.apiPort}`,
+    phoenixUrl: `http://${host}:${instance.phoenixPort}`,
+    localFrontendUrl: `http://localhost:${instance.clientPort}`,
+  };
+}
+
+function parseComposeJson(output) {
+  const trimmed = output.trim();
+  if (!trimmed) return [];
+  if (trimmed.startsWith("[")) return JSON.parse(trimmed);
+
+  return trimmed
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+}
+
+async function runCommand(command, args, options = {}) {
+  try {
+    const { stdout, stderr } = await execFileAsync(command, args, {
+      cwd: managerRoot,
+      maxBuffer: 1024 * 1024 * 10,
+      ...options,
+    });
+    return { stdout, stderr };
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      throw createHttpError(500, `Required command not found: ${command}`);
+    }
+
+    if (typeof error.stderr === "string" && error.stderr.trim()) {
+      throw createHttpError(500, error.stderr.trim());
+    }
+
+    throw error;
+  }
+}
+
+async function runDockerCommand(args, options = {}) {
+  try {
+    return await runCommand("docker", ["compose", ...args], options);
+  } catch (error) {
+    const message = String(error?.message || "");
+    const shouldFallback =
+      message.includes("Required command not found: docker") ||
+      message.includes("docker: 'compose' is not a docker command") ||
+      message.includes("unknown shorthand flag: 'f' in -f") ||
+      message.includes("Usage:  docker [OPTIONS] COMMAND");
+
+    if (!shouldFallback) {
+      throw error;
+    }
+
+    return await runCommand("docker-compose", args, options);
+  }
+}
+
+async function isPortAvailable(port) {
+  return await new Promise((resolve) => {
+    const server = net.createServer();
+    server.once("error", () => resolve(false));
+    server.once("listening", () => server.close(() => resolve(true)));
+    server.listen(port, "127.0.0.1");
+  });
+}
+
+async function reservePort(startPort, usedPorts) {
+  let port = startPort;
+
+  while (usedPorts.has(port) || !(await isPortAvailable(port))) {
+    port += 1;
+  }
+
+  usedPorts.add(port);
+  return port;
+}
+
+async function allocatePorts(existingInstances) {
+  const usedPorts = new Set();
+
+  for (const instance of existingInstances) {
+    usedPorts.add(instance.apiPort);
+    usedPorts.add(instance.clientPort);
+    usedPorts.add(instance.phoenixPort);
+  }
+
+  return {
+    clientPort: await reservePort(PORT_STARTS.clientPort, usedPorts),
+    apiPort: await reservePort(PORT_STARTS.apiPort, usedPorts),
+    phoenixPort: await reservePort(PORT_STARTS.phoenixPort, usedPorts),
+  };
+}
+
+async function writeEnvFile(instance) {
+  const sourceDir = await ensureAmbrosiaSourceDir();
+  const envLines = [
+    `INSTANCE_ID=${instance.id}`,
+    `CLIENT_PORT=${instance.clientPort}`,
+    `API_PORT=${instance.apiPort}`,
+    `PHOENIX_PORT=${instance.phoenixPort}`,
+    "PHOENIXD_IMAGE=acinq/phoenixd:0.7.1",
+    `AMBROSIA_VOLUME=${instance.projectName}-ambrosia-data`,
+    `PHOENIX_VOLUME=${instance.projectName}-phoenix-data`,
+    `AMBROSIA_SERVER_CONTEXT=${path.join(sourceDir, "server")}`,
+    `AMBROSIA_CLIENT_CONTEXT=${path.join(sourceDir, "client")}`,
+  ];
+
+  await mkdir(getInstanceDirectory(instance.id), { recursive: true });
+  await writeFile(getEnvPath(instance.id), `${envLines.join("\n")}\n`);
+}
+
+function composeArgs(instance, args) {
+  return ["-f", composeFile, "--env-file", getEnvPath(instance.id), "-p", instance.projectName, ...args];
+}
+
+async function runCompose(instance, args) {
+  return await runDockerCommand(composeArgs(instance, args));
+}
+
+async function inspectRuntimeStatus(instance) {
+  try {
+    const { stdout } = await runCompose(instance, ["ps", "--all", "--format", "json"]);
+    const services = parseComposeJson(stdout);
+
+    if (services.length === 0) {
+      return "missing";
+    }
+
+    const states = services
+      .map((service) => `${service.State || service.Status || ""}`.toLowerCase())
+      .filter(Boolean);
+
+    if (states.length > 0 && states.every((state) => state.includes("running"))) {
+      return "running";
+    }
+
+    if (states.some((state) => state.includes("running"))) {
+      return "partial";
+    }
+
+    if (states.some((state) => state.includes("exited") || state.includes("stopped") || state.includes("created"))) {
+      return "stopped";
+    }
+
+    return "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+async function getInstanceOrThrow(instanceId) {
+  const registry = await readRegistry();
+  const instance = registry.instances.find((entry) => entry.id === instanceId);
+
+  if (!instance) {
+    throw createHttpError(404, "Instance not found");
+  }
+
+  return { registry, instance };
+}
+
+function decorateInstance(instance, runtimeStatus = instance.status || "unknown") {
+  return {
+    ...instance,
+    status: runtimeStatus,
+    ...getUrls(instance),
+  };
+}
+
+export async function listInstances() {
+  const registry = await readRegistry();
+  const instances = [];
+
+  for (const instance of registry.instances) {
+    const status = await inspectRuntimeStatus(instance);
+    instances.push(decorateInstance(instance, status));
+  }
+
+  return instances.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+}
+
+export async function createInstance(payload, options = {}) {
+  const reportProgress = createProgressReporter(options.reportProgress);
+  const displayName = String(payload?.name || "").trim();
+
+  if (!displayName) {
+    throw createHttpError(400, "Instance name is required");
+  }
+
+  const id = sanitizeName(displayName);
+  if (!id) {
+    throw createHttpError(400, "Instance name must contain letters or numbers");
+  }
+
+  const registry = await readRegistry();
+  if (registry.instances.some((entry) => entry.id === id)) {
+    throw createHttpError(409, "An instance with that name already exists");
+  }
+
+  reportProgress({ step: "allocating_ports", message: "Allocating ports for the new instance", progress: 10 });
+  const ports = await allocatePorts(registry.instances);
+  const instance = {
+    id,
+    name: displayName,
+    createdAt: new Date().toISOString(),
+    projectName: getProjectName(id),
+    ...ports,
+    status: "creating",
+  };
+
+  reportProgress({ step: "writing_config", message: "Writing instance configuration", progress: 25, instanceId: id });
+  await writeEnvFile(instance);
+  registry.instances.push(instance);
+  await writeRegistry(registry);
+
+  try {
+    reportProgress({
+      step: "building_images",
+      message: "Building and starting Docker services",
+      progress: 60,
+      instanceId: id,
+    });
+    await runCompose(instance, ["up", "-d", "--build"]);
+  } catch (error) {
+    await runCompose(instance, ["down", "-v"]).catch(() => undefined);
+    await rm(getInstanceDirectory(id), { recursive: true, force: true }).catch(() => undefined);
+    registry.instances = registry.instances.filter((entry) => entry.id !== id);
+    await writeRegistry(registry).catch(() => undefined);
+    throw createHttpError(500, `Failed to create instance: ${error.message}`);
+  }
+
+  reportProgress({ step: "completed", message: "Instance is ready", progress: 100, instanceId: id });
+  return decorateInstance(instance, "running");
+}
+
+export async function startInstance(instanceId, options = {}) {
+  const reportProgress = createProgressReporter(options.reportProgress);
+  const { registry, instance } = await getInstanceOrThrow(instanceId);
+
+  reportProgress({ step: "starting_services", message: "Starting Docker services", progress: 40, instanceId });
+  await runCompose(instance, ["start"]);
+  instance.status = "running";
+  await writeRegistry(registry);
+  reportProgress({ step: "completed", message: "Instance is running", progress: 100, instanceId });
+  return decorateInstance(instance, "running");
+}
+
+export async function stopInstance(instanceId, options = {}) {
+  const reportProgress = createProgressReporter(options.reportProgress);
+  const { registry, instance } = await getInstanceOrThrow(instanceId);
+
+  reportProgress({ step: "stopping_services", message: "Stopping Docker services", progress: 40, instanceId });
+  await runCompose(instance, ["stop"]);
+  instance.status = "stopped";
+  await writeRegistry(registry);
+  reportProgress({ step: "completed", message: "Instance is stopped", progress: 100, instanceId });
+  return decorateInstance(instance, "stopped");
+}
+
+export async function rebuildInstance(instanceId, options = {}) {
+  const reportProgress = createProgressReporter(options.reportProgress);
+  const { registry, instance } = await getInstanceOrThrow(instanceId);
+
+  instance.status = "rebuilding";
+  await writeRegistry(registry);
+  await writeEnvFile(instance);
+  reportProgress({
+    step: "rebuilding_images",
+    message: "Rebuilding images from current Ambrosia source",
+    progress: 35,
+    instanceId,
+  });
+  await runCompose(instance, ["up", "-d", "--build", "--force-recreate"]);
+  instance.status = "running";
+  await writeRegistry(registry);
+  reportProgress({ step: "completed", message: "Instance rebuilt successfully", progress: 100, instanceId });
+  return decorateInstance(instance, "running");
+}
+
+export async function deleteInstance(instanceId, options = {}) {
+  const reportProgress = createProgressReporter(options.reportProgress);
+  const { registry, instance } = await getInstanceOrThrow(instanceId);
+
+  reportProgress({ step: "removing_registry", message: "Removing instance from inventory", progress: 20, instanceId });
+  registry.instances = registry.instances.filter((entry) => entry.id !== instanceId);
+  await writeRegistry(registry);
+  reportProgress({ step: "removing_containers", message: "Removing containers and volumes", progress: 65, instanceId });
+  await runCompose(instance, ["down", "-v"]);
+  await rm(getInstanceDirectory(instanceId), { recursive: true, force: true });
+  reportProgress({ step: "completed", message: "Instance deleted", progress: 100, instanceId });
+}
