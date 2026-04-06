@@ -4,8 +4,23 @@ Standalone local web app to manage isolated Docker-based Ambrosia instances.
 
 ## Requirements
 
+- Node.js 22+
 - Docker with either `docker compose` or `docker-compose`
 - A local Ambrosia source repo available on disk
+
+## Dependencies
+
+### Runtime
+
+- Node.js to run the local web server
+- Docker Engine to build and run Ambrosia instance containers
+- Docker Compose support through `docker compose` or `docker-compose`
+- A local Ambrosia checkout with `server/` and `client/` directories
+
+### Bundled
+
+- `qr.js` vendored under `vendor/qr.js` for local QR generation
+- Ambrosia icon asset under `public/ambrosia-icon.png` for the web UI
 
 By default, this manager expects the Ambrosia source repo at:
 
