@@ -1,0 +1,48 @@
+services:
+  phoenixd:
+    image: ${PHOENIXD_IMAGE}
+    restart: unless-stopped
+    networks:
+      - default
+    ports:
+      - "${PHOENIX_PORT}:9740"
+    volumes:
+      - phoenix_data:/phoenix/.phoenix
+
+  ambrosia:
+    build:
+      context: ${AMBROSIA_SERVER_CONTEXT}
+    image: ambrosia
+    restart: unless-stopped
+    networks:
+      - default
+    ports:
+      - "${API_PORT}:9154"
+    volumes:
+      - ambrosia_data:/root/.Ambrosia-POS
+      - phoenix_data:/root/.phoenix
+    depends_on:
+      - phoenixd
+
+  ambrosia-client:
+    build:
+      context: ${AMBROSIA_CLIENT_CONTEXT}
+    image: ambrosia-client
+    restart: unless-stopped
+    networks:
+      - default
+    volumes:
+      - ambrosia_data:/root/.Ambrosia-POS
+    depends_on:
+      - ambrosia
+    ports:
+      - "${CLIENT_PORT}:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://ambrosia:9154
+      NEXT_PUBLIC_PORT_API: "${API_PORT}"
+
+volumes:
+  phoenix_data:
+    name: ${PHOENIX_VOLUME}
+  ambrosia_data:
+    name: ${AMBROSIA_VOLUME}
