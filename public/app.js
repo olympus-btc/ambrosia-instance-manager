@@ -144,73 +144,71 @@ function renderInstances(instances) {
     return;
   }
 
-  tableWrapper.innerHTML = `
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Status</th>
-          <th>Frontend</th>
-          <th>API</th>
-          <th>Phoenixd</th>
-          <th>Chain</th>
-          <th>Liquidity</th>
-          <th>Created</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${instances
-          .map(
-            (instance) => {
-              const activeJob = findInstanceJob(instance.id);
-              const isLocked = Boolean(activeJob);
-              const disabled = isLocked ? "disabled" : "";
-              const nextChain = (instance.phoenixChain || "mainnet") === "mainnet" ? "testnet" : "mainnet";
-              const switchLabel = nextChain === "mainnet" ? "Mainnet" : "Testnet";
-              const jobMeta = activeJob
-                ? `<div class="instance-job">${escapeHtml(activeJob.message || formatActionLabel(activeJob.action))}</div>`
-                : "";
+  tableWrapper.innerHTML = `<div class="instance-grid">${instances.map(renderInstanceCard).join("")}</div>`;
+}
 
-              return `
-              <tr>
-                <td>
-                  <strong>${escapeHtml(instance.name)}</strong>
-                  <div class="subtle">${escapeHtml(instance.id)}</div>
-                  ${jobMeta}
-                </td>
-                <td>${statusBadge(instance.status)}</td>
-                <td><a href="${escapeHtml(instance.frontendUrl)}" target="_blank" rel="noreferrer">${escapeHtml(instance.frontendUrl)}</a></td>
-                <td><code>${escapeHtml(instance.apiUrl)}</code></td>
-                <td><code>${escapeHtml(instance.phoenixUrl)}</code></td>
-                <td>${statusBadge(instance.phoenixChain || "mainnet")}</td>
-                <td>${statusBadge(instance.phoenixAutoLiquidityOff ? "off" : "auto")}</td>
-                <td>${new Date(instance.createdAt).toLocaleString()}</td>
-                <td class="actions-cell">
-                  <div class="actions actions-compact">
-                    <button data-action="open" data-id="${escapeHtml(instance.id)}" ${disabled}>Open</button>
-                    <button data-action="diagnostics" data-id="${escapeHtml(instance.id)}" class="secondary" ${disabled}>Logs</button>
-                    <details class="action-menu">
-                      <summary class="secondary" ${disabled}>More</summary>
-                      <div class="action-menu-panel">
-                        <button data-action="qr" data-id="${escapeHtml(instance.id)}" data-url="${escapeHtml(instance.frontendUrl)}" data-name="${escapeHtml(instance.name)}" class="secondary" ${disabled}>QR</button>
-                        <button data-action="copy-local" data-id="${escapeHtml(instance.id)}" data-url="${escapeHtml(instance.localFrontendUrl)}" class="secondary" ${disabled}>Copy localhost</button>
-                        <button data-action="switch-chain" data-id="${escapeHtml(instance.id)}" data-chain="${escapeHtml(nextChain)}" class="secondary" ${disabled}>${switchLabel}</button>
-                        <button data-action="rebuild" data-id="${escapeHtml(instance.id)}" class="secondary" ${disabled}>Rebuild</button>
-                        <button data-action="start" data-id="${escapeHtml(instance.id)}" class="secondary" ${disabled}>Start</button>
-                        <button data-action="stop" data-id="${escapeHtml(instance.id)}" class="secondary" ${disabled}>Stop</button>
-                        <button data-action="delete" data-id="${escapeHtml(instance.id)}" class="danger" ${disabled}>Delete</button>
-                      </div>
-                    </details>
-                  </div>
-                </td>
-              </tr>
-            `;
-            },
-          )
-          .join("")}
-      </tbody>
-    </table>
+function renderInstanceCard(instance) {
+  const activeJob = findInstanceJob(instance.id);
+  const isLocked = Boolean(activeJob);
+  const disabled = isLocked ? "disabled" : "";
+  const status = instance.status || "unknown";
+  const isRunning = status === "running";
+  const isStopped = status === "stopped";
+  const nextChain = (instance.phoenixChain || "mainnet") === "mainnet" ? "testnet" : "mainnet";
+  const switchLabel = nextChain === "mainnet" ? "Mainnet" : "Testnet";
+
+  const jobMeta = activeJob
+    ? `<div class="instance-job">${escapeHtml(activeJob.message || formatActionLabel(activeJob.action))}</div>`
+    : "";
+
+  return `
+    <div class="instance-card" data-instance="${escapeHtml(instance.id)}">
+      <div class="instance-card-header">
+        <div class="instance-card-title">
+          <strong class="instance-name">${escapeHtml(instance.name)}</strong>
+          <span class="subtle">${escapeHtml(instance.id)}</span>
+        </div>
+        <div class="instance-card-badges">
+          ${statusBadge(status)}
+          ${statusBadge(instance.phoenixChain || "mainnet")}
+          ${statusBadge(instance.phoenixAutoLiquidityOff ? "manual liquidity" : "auto liquidity")}
+        </div>
+      </div>
+
+      ${jobMeta}
+
+      <div class="instance-card-urls">
+        <a href="${escapeHtml(instance.frontendUrl)}" target="_blank" rel="noreferrer" class="instance-url instance-url-frontend">
+          <span class="instance-url-label">Frontend</span>
+          <span class="instance-url-value">${escapeHtml(instance.frontendUrl)}</span>
+        </a>
+        <div class="instance-url-group">
+          <span class="instance-url-item"><span class="instance-url-label">API</span> <code>${escapeHtml(instance.apiUrl)}</code></span>
+          <span class="instance-url-item"><span class="instance-url-label">Phoenixd</span> <code>${escapeHtml(instance.phoenixUrl)}</code></span>
+        </div>
+      </div>
+
+      <div class="instance-card-actions">
+        <div class="action-group action-group-primary">
+          <button data-action="open" data-id="${escapeHtml(instance.id)}" ${disabled}>Open</button>
+          <button data-action="diagnostics" data-id="${escapeHtml(instance.id)}" class="secondary" ${disabled}>Logs</button>
+          <button data-action="qr" data-id="${escapeHtml(instance.id)}" data-url="${escapeHtml(instance.frontendUrl)}" data-name="${escapeHtml(instance.name)}" class="secondary" ${disabled}>QR</button>
+          <button data-action="copy-local" data-id="${escapeHtml(instance.id)}" data-url="${escapeHtml(instance.localFrontendUrl)}" class="secondary" ${disabled}>Copy localhost</button>
+        </div>
+        <div class="action-group action-group-secondary">
+          ${isStopped ? `<button data-action="start" data-id="${escapeHtml(instance.id)}" class="secondary" ${disabled}>Start</button>` : ""}
+          ${isRunning ? `<button data-action="stop" data-id="${escapeHtml(instance.id)}" class="secondary" ${disabled}>Stop</button>` : ""}
+          <button data-action="switch-chain" data-id="${escapeHtml(instance.id)}" data-chain="${escapeHtml(nextChain)}" class="secondary" ${disabled}>${switchLabel}</button>
+          <button data-action="rebuild" data-id="${escapeHtml(instance.id)}" class="secondary" ${disabled}>Rebuild</button>
+        </div>
+        <div class="action-group action-group-danger">
+          <button data-action="delete" data-id="${escapeHtml(instance.id)}" class="danger" ${disabled}>Delete</button>
+        </div>
+        <div class="instance-card-meta">
+          <span class="subtle">Created ${new Date(instance.createdAt).toLocaleDateString()}</span>
+        </div>
+      </div>
+    </div>
   `;
 }
 
