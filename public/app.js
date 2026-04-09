@@ -24,6 +24,9 @@ const diagnosticsDialog = document.querySelector("#diagnostics-dialog");
 const diagnosticsTitle = document.querySelector("#diagnostics-title");
 const diagnosticsSummary = document.querySelector("#diagnostics-summary");
 const diagnosticsContent = document.querySelector("#diagnostics-content");
+const diagnosticsServicesBar = document.querySelector("#diagnostics-services-bar");
+const diagnosticsRefreshBtn = document.querySelector("#diagnostics-refresh");
+const diagnosticsAutorefreshBtn = document.querySelector("#diagnostics-autorefresh");
 const THEME_STORAGE_KEY = "ambrosia-admin-theme";
 let instancesCache = [];
 let jobsCache = [];
@@ -69,14 +72,6 @@ function statusBadge(status) {
   }[status] || "muted";
 
   return `<span class="badge badge-${tone}">${escapeHtml(status)}</span>`;
-}
-
-function formatServiceLogs(logs) {
-  if (!logs) {
-    return "No logs available.";
-  }
-
-  return escapeHtml(logs);
 }
 
 function formatActionLabel(action) {
@@ -333,37 +328,122 @@ async function copyUrl(url, successMessage) {
   setFeedback(successMessage, "good");
 }
 
+let diagnosticsState = { instanceId: null, services: [], activeService: null, autoRefresh: false, autoRefreshTimer: null };
+
+function formatLogLines(raw) {
+  if (!raw) return '<span class="log-empty">No logs available.</span>';
+  const lines = raw.split("\n");
+  return lines.map((line, i) => {
+    const num = String(i + 1).padStart(String(lines.length).length, " ");
+    return `<span class="log-ln">${num}</span><span class="log-lv">${escapeHtml(line)}</span>`;
+  }).join("\n");
+}
+
+function renderDiagnosticsServices() {
+  const { services, activeService } = diagnosticsState;
+  diagnosticsServicesBar.innerHTML = services.map((s) => {
+    const isActive = s.name === activeService;
+    const stateNorm = `${s.state}`.toLowerCase();
+    const dotCls = stateNorm.includes("running") ? "svc-dot-good" : stateNorm.includes("exited") || stateNorm.includes("stopped") ? "svc-dot-bad" : "svc-dot-warn";
+    return `<button type="button" class="diagnostics-tab ${isActive ? "diagnostics-tab-active" : ""}" data-svc="${escapeHtml(s.name)}"><span class="svc-dot ${dotCls}"></span>${escapeHtml(s.name)}</button>`;
+  }).join("");
+}
+
+function renderDiagnosticsContent() {
+  const { services, activeService } = diagnosticsState;
+  const svc = services.find((s) => s.name === activeService);
+  if (!svc) return;
+
+  const meta = [
+    svc.image ? `<span class="diag-meta"><span class="diag-meta-label">Image</span> <code>${escapeHtml(svc.image)}</code></span>` : "",
+    svc.ports.length ? `<span class="diag-meta"><span class="diag-meta-label">Ports</span> <code>${svc.ports.map(escapeHtml).join(", ")}</code></span>` : "",
+    svc.exitCode !== null ? `<span class="diag-meta"><span class="diag-meta-label">Exit</span> <code>${svc.exitCode}</code></span>` : "",
+  ].filter(Boolean).join("");
+
+  diagnosticsSummary.textContent = diagnosticsState.summary || "No summary available";
+  diagnosticsContent.innerHTML = `
+    <section class="diagnostic-service">
+      <div class="diagnostic-service-header">
+        <div class="diag-header-left">
+          ${statusBadge(svc.state || "unknown")}
+          ${meta ? `<div class="diag-meta-row">${meta}</div>` : ""}
+        </div>
+      </div>
+      <pre class="log-output">${formatLogLines(svc.logs)}</pre>
+    </section>
+  `;
+  diagnosticsContent.scrollTop = diagnosticsContent.scrollHeight;
+}
+
+async function loadDiagnostics(instanceId) {
+  const response = await fetch(`/api/instances/${instanceId}/diagnostics`);
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error || "Failed to load diagnostics");
+
+  const prevActive = diagnosticsState.activeService;
+  diagnosticsState.services = payload.services || [];
+  diagnosticsState.summary = payload.summary || "";
+  diagnosticsState.activeService = prevActive && diagnosticsState.services.some((s) => s.name === prevActive)
+    ? prevActive
+    : (diagnosticsState.services[0]?.name || null);
+
+  renderDiagnosticsServices();
+  renderDiagnosticsContent();
+}
+
+function stopDiagnosticsAutoRefresh() {
+  if (diagnosticsState.autoRefreshTimer) {
+    window.clearInterval(diagnosticsState.autoRefreshTimer);
+    diagnosticsState.autoRefreshTimer = null;
+  }
+}
+
 async function openDiagnosticsDialog(instanceId) {
+  diagnosticsState = { instanceId, services: [], activeService: null, autoRefresh: false, autoRefreshTimer: null };
   diagnosticsTitle.textContent = `Diagnostics for ${instanceId}`;
   diagnosticsSummary.textContent = "Loading diagnostics...";
   diagnosticsContent.innerHTML = "";
+  diagnosticsServicesBar.innerHTML = "";
+  diagnosticsAutorefreshBtn.textContent = "Auto-refresh: off";
   diagnosticsDialog.showModal();
 
-  const response = await fetch(`/api/instances/${instanceId}/diagnostics`);
-  const payload = await response.json();
-
-  if (!response.ok) {
-    throw new Error(payload.error || "Failed to load diagnostics");
-  }
-
-  diagnosticsSummary.textContent = payload.summary || "No summary available";
-  diagnosticsContent.innerHTML = payload.services
-    .map(
-      (service) => `
-        <section class="diagnostic-service">
-          <div class="section-header diagnostic-service-header">
-            <div>
-              <h3>${escapeHtml(service.name)}</h3>
-              <p class="subtle">${escapeHtml(service.status || service.state || "unknown")}</p>
-            </div>
-            ${statusBadge(service.state || "unknown")}
-          </div>
-          <pre class="log-output">${formatServiceLogs(service.logs)}</pre>
-        </section>
-      `,
-    )
-    .join("");
+  await loadDiagnostics(instanceId);
 }
+
+diagnosticsServicesBar.addEventListener("click", (event) => {
+  const tab = event.target.closest(".diagnostics-tab");
+  if (!tab) return;
+  diagnosticsState.activeService = tab.dataset.svc;
+  renderDiagnosticsServices();
+  renderDiagnosticsContent();
+});
+
+diagnosticsRefreshBtn.addEventListener("click", async () => {
+  if (!diagnosticsState.instanceId) return;
+  try {
+    await loadDiagnostics(diagnosticsState.instanceId);
+  } catch (error) {
+    setFeedback(error.message, "bad");
+  }
+});
+
+diagnosticsAutorefreshBtn.addEventListener("click", () => {
+  diagnosticsState.autoRefresh = !diagnosticsState.autoRefresh;
+  diagnosticsAutorefreshBtn.textContent = `Auto-refresh: ${diagnosticsState.autoRefresh ? "on" : "off"}`;
+  if (diagnosticsState.autoRefresh) {
+    diagnosticsState.autoRefreshTimer = window.setInterval(async () => {
+      try {
+        await loadDiagnostics(diagnosticsState.instanceId);
+      } catch {}
+    }, 3000);
+  } else {
+    stopDiagnosticsAutoRefresh();
+  }
+});
+
+diagnosticsDialog.addEventListener("close", () => {
+  stopDiagnosticsAutoRefresh();
+});
 
 createForm.addEventListener("submit", async (event) => {
   event.preventDefault();

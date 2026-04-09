@@ -618,8 +618,85 @@ a {
 .diagnostics-content {
   display: grid;
   gap: 16px;
-  max-height: min(68vh, 820px);
-  overflow: auto;
+  max-height: min(52vh, 620px);
+  overflow-y: auto;
+}
+
+.diagnostics-services-bar {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.diagnostics-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.diagnostics-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 6px 14px;
+  background: var(--panel-strong);
+  color: var(--ink);
+  font: 0.84rem/1 "Space Grotesk", "Segoe UI", sans-serif;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: none;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.diagnostics-tab:hover {
+  border-color: var(--accent);
+  box-shadow: none;
+  transform: none;
+}
+
+.diagnostics-tab-active {
+  border-color: var(--accent);
+  background: rgba(28, 124, 84, 0.1);
+}
+
+:root[data-theme="dark"] .diagnostics-tab {
+  background: rgba(115, 226, 167, 0.08);
+  color: var(--ink);
+}
+
+:root[data-theme="dark"] .diagnostics-tab-active {
+  background: rgba(115, 226, 167, 0.18);
+}
+
+:root[data-theme="dark"] .diag-meta {
+  color: var(--ink);
+}
+
+:root[data-theme="dark"] .diag-meta code {
+  color: var(--ink);
+}
+
+.svc-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.svc-dot-good {
+  background: var(--good);
+  box-shadow: 0 0 6px rgba(43, 147, 72, 0.4);
+}
+
+.svc-dot-bad {
+  background: var(--bad);
+}
+
+.svc-dot-warn {
+  background: var(--warn);
 }
 
 .diagnostic-service {
@@ -633,6 +710,32 @@ a {
   margin-bottom: 14px;
 }
 
+.diag-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.diag-meta-row {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.diag-meta {
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+.diag-meta-label {
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  margin-right: 4px;
+}
+
 .log-output {
   margin: 0;
   padding: 14px;
@@ -640,9 +743,41 @@ a {
   background: rgba(8, 18, 13, 0.9);
   color: #e8f6eb;
   overflow: auto;
-  font: 0.84rem/1.45 "IBM Plex Mono", "SFMono-Regular", monospace;
+  font: 0.8rem/1.55 "IBM Plex Mono", "SFMono-Regular", monospace;
   white-space: pre-wrap;
   word-break: break-word;
+  max-height: 380px;
+}
+
+.log-empty {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.log-ln {
+  display: inline-block;
+  min-width: 3em;
+  text-align: right;
+  padding-right: 14px;
+  color: rgba(159, 192, 172, 0.3);
+  user-select: none;
+}
+
+.log-lv {
+  color: #d0e8d6;
+}
+
+:root[data-theme="dark"] .log-output {
+  background: rgba(0, 0, 0, 0.6);
+  color: #ffffff;
+}
+
+:root[data-theme="dark"] .log-lv {
+  color: #ffffff;
+}
+
+:root[data-theme="dark"] .log-ln {
+  color: rgba(255, 255, 255, 0.22);
 }
 
 .qr-image {

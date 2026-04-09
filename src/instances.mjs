@@ -348,19 +348,25 @@ export async function getInstanceDiagnostics(instanceId) {
       let logs = "";
 
       try {
-        const { stdout, stderr } = await runCompose(instance, ["logs", "--tail", "120", serviceName]);
+        const { stdout, stderr } = await runCompose(instance, ["logs", "--tail", "300", "--no-color", serviceName]);
         logs = `${stdout || ""}${stderr || ""}`.trim();
       } catch (error) {
         logs = String(error?.message || "Unable to read logs");
       }
 
+      const ports = Array.isArray(service.Publishers)
+        ? service.Publishers.map((p) => p.PublishedPort && p.TargetPort ? `${p.PublishedPort}->${p.TargetPort}` : null).filter(Boolean)
+        : [];
+
       return {
         name: serviceName,
+        image: service.Image || "",
         state: service.State || service.Status || "unknown",
         status: service.Status || "",
         health: service.Health || "",
         exitCode: service.ExitCode ?? null,
-        publishers: Array.isArray(service.Publishers) ? service.Publishers : [],
+        ports,
+        createdAt: service.CreatedAt || "",
         logs,
       };
     }),
