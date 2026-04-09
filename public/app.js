@@ -9,8 +9,8 @@ const themeToggle = document.querySelector("#theme-toggle");
 const jobPanel = document.querySelector("#job-panel");
 const jobTitle = document.querySelector("#job-title");
 const jobStatus = document.querySelector("#job-status");
-const jobMessage = document.querySelector("#job-message");
 const jobProgressBar = document.querySelector("#job-progress-bar");
+const jobSteps = document.querySelector("#job-steps");
 const qrDialog = document.querySelector("#qr-dialog");
 const qrTitle = document.querySelector("#qr-title");
 const qrImage = document.querySelector("#qr-image");
@@ -113,8 +113,32 @@ function renderJobPanel() {
   jobPanel.hidden = false;
   jobTitle.textContent = formatActionLabel(activeJob.action);
   jobStatus.textContent = activeJob.status;
-  jobMessage.textContent = activeJob.message || "Running operation";
   jobProgressBar.style.width = `${Math.max(6, activeJob.progress || 0)}%`;
+
+  const steps = activeJob.steps || [];
+  const isTerminal = activeJob.status === "completed" || activeJob.status === "failed";
+
+  jobSteps.innerHTML = steps.map((s, i) => {
+    const isLast = i === steps.length - 1;
+    let icon;
+    let cls;
+    if (activeJob.status === "failed" && isLast) {
+      icon = "\u2717";
+      cls = "job-step-failed";
+    } else if (isTerminal && isLast) {
+      icon = "\u2713";
+      cls = "job-step-done";
+    } else if (isLast && activeJob.status === "running") {
+      icon = "\u25CF";
+      cls = "job-step-active";
+    } else {
+      icon = "\u2713";
+      cls = "job-step-done";
+    }
+    return `<div class="job-step ${cls}"><span class="job-step-icon">${icon}</span> <span class="job-step-text">${escapeHtml(s.message)}</span></div>`;
+  }).join("");
+
+  jobSteps.scrollTop = jobSteps.scrollHeight;
 }
 
 function updateBusyState() {
@@ -158,7 +182,10 @@ function renderInstanceCard(instance) {
   const switchLabel = nextChain === "mainnet" ? "Mainnet" : "Testnet";
 
   const jobMeta = activeJob
-    ? `<div class="instance-job">${escapeHtml(activeJob.message || formatActionLabel(activeJob.action))}</div>`
+    ? `<div class="instance-card-progress">
+         <div class="instance-card-progress-bar" style="width:${Math.max(6, activeJob.progress || 0)}%"></div>
+       </div>
+       <div class="instance-job">${escapeHtml(activeJob.message || formatActionLabel(activeJob.action))}</div>`
     : "";
 
   return `

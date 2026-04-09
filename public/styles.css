@@ -336,9 +336,57 @@ button.secondary:hover,
   flex-wrap: wrap;
 }
 
-.job-message {
-  margin: 14px 0 10px;
+.job-steps {
+  margin-top: 14px;
+  display: grid;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  font: 0.84rem/1.5 "IBM Plex Mono", "SFMono-Regular", monospace;
+}
+
+.job-step {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.job-step-icon {
+  flex-shrink: 0;
+  width: 1.2em;
+  text-align: center;
+}
+
+.job-step-done .job-step-icon {
+  color: var(--good);
+}
+
+.job-step-active .job-step-icon {
+  color: var(--accent);
+  animation: pulse-dot 1.2s ease-in-out infinite;
+}
+
+.job-step-failed .job-step-icon {
+  color: var(--bad);
+}
+
+.job-step-done .job-step-text {
   color: var(--muted);
+}
+
+.job-step-active .job-step-text {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.job-step-failed .job-step-text {
+  color: var(--bad);
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
 }
 
 .job-progress-track {
@@ -389,6 +437,28 @@ a {
   border-radius: 20px;
   padding: 20px;
   background: rgba(28, 124, 84, 0.03);
+  transition: border-color 200ms ease;
+}
+
+.instance-card[data-status="running"] .instance-card-progress,
+.instance-card:has(.instance-card-progress) {
+  border-color: rgba(199, 125, 0, 0.24);
+}
+
+.instance-card-progress {
+  margin-top: 12px;
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(28, 124, 84, 0.1);
+  overflow: hidden;
+}
+
+.instance-card-progress-bar {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-soft) 100%);
+  transition: width 400ms ease;
 }
 
 .instance-card-header {

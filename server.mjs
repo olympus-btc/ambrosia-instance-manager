@@ -54,6 +54,7 @@ function listJobs() {
 }
 
 function createJob({ action, instanceId = null, targetName = null }) {
+  const now = new Date().toISOString();
   const job = {
     id: crypto.randomUUID(),
     action,
@@ -63,7 +64,8 @@ function createJob({ action, instanceId = null, targetName = null }) {
     progress: 0,
     step: "queued",
     message: "Queued",
-    startedAt: new Date().toISOString(),
+    steps: [{ step: "queued", message: "Queued", progress: 0, at: now }],
+    startedAt: now,
     finishedAt: null,
     error: null,
   };
@@ -74,7 +76,14 @@ function createJob({ action, instanceId = null, targetName = null }) {
 function updateJob(jobId, patch) {
   const existing = jobs.get(jobId);
   if (!existing) return;
-  jobs.set(jobId, { ...existing, ...patch });
+  const updated = { ...existing, ...patch };
+  if (patch.step && patch.step !== existing.step) {
+    updated.steps = [
+      ...(existing.steps || []),
+      { step: patch.step, message: patch.message || "", progress: patch.progress ?? 0, at: new Date().toISOString() },
+    ];
+  }
+  jobs.set(jobId, updated);
 }
 
 function runJob(job, task) {
