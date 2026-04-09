@@ -19,6 +19,7 @@ const PORT_STARTS = {
   clientPort: 3001,
   phoenixPort: 9741,
 };
+const PHOENIX_CHAINS = new Set(["mainnet", "testnet"]);
 
 function createProgressReporter(reportProgress) {
   return typeof reportProgress === "function" ? reportProgress : () => {};
@@ -37,6 +38,38 @@ function sanitizeName(input) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 40);
+}
+
+function resolvePhoenixChain(value, { fallback = "mainnet", strict = false } = {}) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+
+  if (!normalized) {
+    return fallback;
+  }
+
+  if (PHOENIX_CHAINS.has(normalized)) {
+    return normalized;
+  }
+
+  if (strict) {
+    throw createHttpError(400, "Phoenix chain must be either mainnet or testnet");
+  }
+
+  return fallback;
+}
+
+function resolvePhoenixAutoLiquidityOff(value) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+
+  return normalized === "true" || normalized === "1" || normalized === "on";
 }
 
 async function ensureDataRoot() {
@@ -207,11 +240,16 @@ async function allocatePorts(existingInstances) {
 
 async function writeEnvFile(instance) {
   const sourceDir = await ensureAmbrosiaSourceDir();
+  const phoenixChain = resolvePhoenixChain(instance.phoenixChain);
+  const phoenixAutoLiquidityOff = resolvePhoenixAutoLiquidityOff(instance.phoenixAutoLiquidityOff);
   const envLines = [
     `INSTANCE_ID=${instance.id}`,
     `CLIENT_PORT=${instance.clientPort}`,
     `API_PORT=${instance.apiPort}`,
     `PHOENIX_PORT=${instance.phoenixPort}`,
+    `PHOENIX_CHAIN=${phoenixChain}`,
+    `PHOENIX_AUTO_LIQUIDITY=${phoenixAutoLiquidityOff ? "off" : ""}`,
+    `PHOENIX_MAX_MINING_FEE=${phoenixAutoLiquidityOff ? "5000" : ""}`,
     "PHOENIXD_IMAGE=acinq/phoenixd:0.7.1",
     `AMBROSIA_VOLUME=${instance.projectName}-ambrosia-data`,
     `PHOENIX_VOLUME=${instance.projectName}-phoenix-data`,
@@ -276,6 +314,8 @@ async function getInstanceOrThrow(instanceId) {
 function decorateInstance(instance, runtimeStatus = instance.status || "unknown") {
   return {
     ...instance,
+    phoenixChain: resolvePhoenixChain(instance.phoenixChain),
+    phoenixAutoLiquidityOff: resolvePhoenixAutoLiquidityOff(instance.phoenixAutoLiquidityOff),
     status: runtimeStatus,
     ...getUrls(instance),
   };
@@ -293,9 +333,61 @@ export async function listInstances() {
   return instances.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
 }
 
+export async function getInstanceDiagnostics(instanceId) {
+  const { instance } = await getInstanceOrThrow(instanceId);
+
+  let services = [];
+  try {
+    const { stdout } = await runCompose(instance, ["ps", "--all", "--format", "json"]);
+    services = parseComposeJson(stdout);
+  } catch {}
+
+  const normalizedServices = await Promise.all(
+    services.map(async (service) => {
+      const serviceName = service.Service || service.Name || "unknown";
+      let logs = "";
+
+      try {
+        const { stdout, stderr } = await runCompose(instance, ["logs", "--tail", "120", serviceName]);
+        logs = `${stdout || ""}${stderr || ""}`.trim();
+      } catch (error) {
+        logs = String(error?.message || "Unable to read logs");
+      }
+
+      return {
+        name: serviceName,
+        state: service.State || service.Status || "unknown",
+        status: service.Status || "",
+        health: service.Health || "",
+        exitCode: service.ExitCode ?? null,
+        publishers: Array.isArray(service.Publishers) ? service.Publishers : [],
+        logs,
+      };
+    }),
+  );
+
+  const failingServices = normalizedServices.filter((service) => {
+    const state = `${service.state}`.toLowerCase();
+    return !state.includes("running");
+  });
+
+  const summary =
+    failingServices.length === 0
+      ? "All services are running"
+      : failingServices.map((service) => `${service.name}: ${service.state}`).join(" | ");
+
+  return {
+    instance: decorateInstance(instance),
+    summary,
+    services: normalizedServices,
+  };
+}
+
 export async function createInstance(payload, options = {}) {
   const reportProgress = createProgressReporter(options.reportProgress);
   const displayName = String(payload?.name || "").trim();
+  const phoenixChain = resolvePhoenixChain(payload?.phoenixChain, { strict: true });
+  const phoenixAutoLiquidityOff = resolvePhoenixAutoLiquidityOff(payload?.phoenixAutoLiquidityOff);
 
   if (!displayName) {
     throw createHttpError(400, "Instance name is required");
@@ -316,6 +408,8 @@ export async function createInstance(payload, options = {}) {
   const instance = {
     id,
     name: displayName,
+    phoenixChain,
+    phoenixAutoLiquidityOff,
     createdAt: new Date().toISOString(),
     projectName: getProjectName(id),
     ...ports,
@@ -388,6 +482,47 @@ export async function rebuildInstance(instanceId, options = {}) {
   instance.status = "running";
   await writeRegistry(registry);
   reportProgress({ step: "completed", message: "Instance rebuilt successfully", progress: 100, instanceId });
+  return decorateInstance(instance, "running");
+}
+
+export async function switchInstancePhoenixChain(instanceId, phoenixChain, options = {}) {
+  const reportProgress = createProgressReporter(options.reportProgress);
+  const { registry, instance } = await getInstanceOrThrow(instanceId);
+  const nextChain = resolvePhoenixChain(phoenixChain, { strict: true });
+
+  if (resolvePhoenixChain(instance.phoenixChain) === nextChain) {
+    return decorateInstance(instance, instance.status || "running");
+  }
+
+  instance.status = "rebuilding";
+  instance.phoenixChain = nextChain;
+  await writeRegistry(registry);
+  await writeEnvFile(instance);
+
+  reportProgress({
+    step: "stopping_services",
+    message: "Stopping services before switching Phoenix chain",
+    progress: 30,
+    instanceId,
+  });
+  await runCompose(instance, ["down"]);
+
+  reportProgress({
+    step: "starting_services",
+    message: "Recreating services on the selected Phoenix chain without deleting Phoenixd data",
+    progress: 70,
+    instanceId,
+  });
+  await runCompose(instance, ["up", "-d", "--force-recreate"]);
+
+  instance.status = "running";
+  await writeRegistry(registry);
+  reportProgress({
+    step: "completed",
+    message: `Instance switched to ${nextChain}`,
+    progress: 100,
+    instanceId,
+  });
   return decorateInstance(instance, "running");
 }
 

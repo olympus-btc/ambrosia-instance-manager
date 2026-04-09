@@ -8,10 +8,12 @@ import { fileURLToPath } from "node:url";
 import {
   createInstance,
   deleteInstance,
+  getInstanceDiagnostics,
   listInstances,
   rebuildInstance,
   startInstance,
   stopInstance,
+  switchInstancePhoenixChain,
 } from "./src/instances.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -182,6 +184,14 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    const diagnosticsMatch = url.pathname.match(/^\/api\/instances\/([^/]+)\/diagnostics$/);
+    if (method === "GET" && diagnosticsMatch) {
+      const [, instanceId] = diagnosticsMatch;
+      statusCode = 200;
+      sendJson(response, 200, await getInstanceDiagnostics(instanceId));
+      return;
+    }
+
     if (method === "GET" && url.pathname === "/api/qr") {
       const text = url.searchParams.get("text");
       if (!text) {
@@ -218,6 +228,17 @@ const server = createServer(async (request, response) => {
             ? stopInstance(instanceId, options)
             : rebuildInstance(instanceId, options),
       );
+      statusCode = 202;
+      sendJson(response, 202, { job });
+      return;
+    }
+
+    const chainSwitchMatch = url.pathname.match(/^\/api\/instances\/([^/]+)\/phoenix-chain$/);
+    if (method === "POST" && chainSwitchMatch) {
+      const [, instanceId] = chainSwitchMatch;
+      const body = await readJsonBody(request);
+      const job = createJob({ action: "switch_chain", instanceId });
+      runJob(job, (options) => switchInstancePhoenixChain(instanceId, body?.phoenixChain, options));
       statusCode = 202;
       sendJson(response, 202, { job });
       return;

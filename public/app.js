@@ -2,6 +2,8 @@ const feedback = document.querySelector("#feedback");
 const tableWrapper = document.querySelector("#table-wrapper");
 const createForm = document.querySelector("#create-form");
 const createInput = document.querySelector("#instance-name");
+const chainSelect = document.querySelector("#phoenix-chain");
+const autoLiquidityCheckbox = document.querySelector("#phoenix-auto-liquidity-off");
 const refreshButton = document.querySelector("#refresh-button");
 const themeToggle = document.querySelector("#theme-toggle");
 const jobPanel = document.querySelector("#job-panel");
@@ -18,6 +20,10 @@ const confirmDialog = document.querySelector("#confirm-dialog");
 const confirmTitle = document.querySelector("#confirm-title");
 const confirmMessage = document.querySelector("#confirm-message");
 const confirmAcceptButton = document.querySelector("#confirm-accept-button");
+const diagnosticsDialog = document.querySelector("#diagnostics-dialog");
+const diagnosticsTitle = document.querySelector("#diagnostics-title");
+const diagnosticsSummary = document.querySelector("#diagnostics-summary");
+const diagnosticsContent = document.querySelector("#diagnostics-content");
 const THEME_STORAGE_KEY = "ambrosia-admin-theme";
 let instancesCache = [];
 let jobsCache = [];
@@ -65,12 +71,21 @@ function statusBadge(status) {
   return `<span class="badge badge-${tone}">${escapeHtml(status)}</span>`;
 }
 
+function formatServiceLogs(logs) {
+  if (!logs) {
+    return "No logs available.";
+  }
+
+  return escapeHtml(logs);
+}
+
 function formatActionLabel(action) {
   return {
     create: "Creating instance",
     start: "Starting instance",
     stop: "Stopping instance",
     rebuild: "Rebuilding instance",
+    switch_chain: "Switching Phoenix chain",
     delete: "Deleting instance",
   }[action] || "Running operation";
 }
@@ -107,6 +122,12 @@ function updateBusyState() {
   const isCreateRunning = activeJobs.some((job) => job.action === "create");
 
   createInput.disabled = isCreateRunning;
+  if (chainSelect) {
+    chainSelect.disabled = isCreateRunning;
+  }
+  if (autoLiquidityCheckbox) {
+    autoLiquidityCheckbox.disabled = isCreateRunning;
+  }
   createForm.querySelector('button[type="submit"]').disabled = isCreateRunning;
   refreshButton.disabled = activeJobs.length > 0;
 }
@@ -132,6 +153,8 @@ function renderInstances(instances) {
           <th>Frontend</th>
           <th>API</th>
           <th>Phoenixd</th>
+          <th>Chain</th>
+          <th>Liquidity</th>
           <th>Created</th>
           <th>Actions</th>
         </tr>
@@ -143,6 +166,8 @@ function renderInstances(instances) {
               const activeJob = findInstanceJob(instance.id);
               const isLocked = Boolean(activeJob);
               const disabled = isLocked ? "disabled" : "";
+              const nextChain = (instance.phoenixChain || "mainnet") === "mainnet" ? "testnet" : "mainnet";
+              const switchLabel = nextChain === "mainnet" ? "Mainnet" : "Testnet";
               const jobMeta = activeJob
                 ? `<div class="instance-job">${escapeHtml(activeJob.message || formatActionLabel(activeJob.action))}</div>`
                 : "";
@@ -158,16 +183,25 @@ function renderInstances(instances) {
                 <td><a href="${escapeHtml(instance.frontendUrl)}" target="_blank" rel="noreferrer">${escapeHtml(instance.frontendUrl)}</a></td>
                 <td><code>${escapeHtml(instance.apiUrl)}</code></td>
                 <td><code>${escapeHtml(instance.phoenixUrl)}</code></td>
+                <td>${statusBadge(instance.phoenixChain || "mainnet")}</td>
+                <td>${statusBadge(instance.phoenixAutoLiquidityOff ? "off" : "auto")}</td>
                 <td>${new Date(instance.createdAt).toLocaleString()}</td>
-                <td>
-                  <div class="actions">
+                <td class="actions-cell">
+                  <div class="actions actions-compact">
                     <button data-action="open" data-id="${escapeHtml(instance.id)}" ${disabled}>Open</button>
-                    <button data-action="qr" data-id="${escapeHtml(instance.id)}" data-url="${escapeHtml(instance.frontendUrl)}" data-name="${escapeHtml(instance.name)}" class="secondary" ${disabled}>QR</button>
-                    <button data-action="copy-local" data-id="${escapeHtml(instance.id)}" data-url="${escapeHtml(instance.localFrontendUrl)}" class="secondary" ${disabled}>Copy localhost</button>
-                    <button data-action="rebuild" data-id="${escapeHtml(instance.id)}" class="secondary" ${disabled}>Rebuild</button>
-                    <button data-action="start" data-id="${escapeHtml(instance.id)}" class="secondary" ${disabled}>Start</button>
-                    <button data-action="stop" data-id="${escapeHtml(instance.id)}" class="secondary" ${disabled}>Stop</button>
-                    <button data-action="delete" data-id="${escapeHtml(instance.id)}" class="danger" ${disabled}>Delete</button>
+                    <button data-action="diagnostics" data-id="${escapeHtml(instance.id)}" class="secondary" ${disabled}>Logs</button>
+                    <details class="action-menu">
+                      <summary class="secondary" ${disabled}>More</summary>
+                      <div class="action-menu-panel">
+                        <button data-action="qr" data-id="${escapeHtml(instance.id)}" data-url="${escapeHtml(instance.frontendUrl)}" data-name="${escapeHtml(instance.name)}" class="secondary" ${disabled}>QR</button>
+                        <button data-action="copy-local" data-id="${escapeHtml(instance.id)}" data-url="${escapeHtml(instance.localFrontendUrl)}" class="secondary" ${disabled}>Copy localhost</button>
+                        <button data-action="switch-chain" data-id="${escapeHtml(instance.id)}" data-chain="${escapeHtml(nextChain)}" class="secondary" ${disabled}>${switchLabel}</button>
+                        <button data-action="rebuild" data-id="${escapeHtml(instance.id)}" class="secondary" ${disabled}>Rebuild</button>
+                        <button data-action="start" data-id="${escapeHtml(instance.id)}" class="secondary" ${disabled}>Start</button>
+                        <button data-action="stop" data-id="${escapeHtml(instance.id)}" class="secondary" ${disabled}>Stop</button>
+                        <button data-action="delete" data-id="${escapeHtml(instance.id)}" class="danger" ${disabled}>Delete</button>
+                      </div>
+                    </details>
                   </div>
                 </td>
               </tr>
@@ -274,17 +308,51 @@ async function copyUrl(url, successMessage) {
   setFeedback(successMessage, "good");
 }
 
+async function openDiagnosticsDialog(instanceId) {
+  diagnosticsTitle.textContent = `Diagnostics for ${instanceId}`;
+  diagnosticsSummary.textContent = "Loading diagnostics...";
+  diagnosticsContent.innerHTML = "";
+  diagnosticsDialog.showModal();
+
+  const response = await fetch(`/api/instances/${instanceId}/diagnostics`);
+  const payload = await response.json();
+
+  if (!response.ok) {
+    throw new Error(payload.error || "Failed to load diagnostics");
+  }
+
+  diagnosticsSummary.textContent = payload.summary || "No summary available";
+  diagnosticsContent.innerHTML = payload.services
+    .map(
+      (service) => `
+        <section class="diagnostic-service">
+          <div class="section-header diagnostic-service-header">
+            <div>
+              <h3>${escapeHtml(service.name)}</h3>
+              <p class="subtle">${escapeHtml(service.status || service.state || "unknown")}</p>
+            </div>
+            ${statusBadge(service.state || "unknown")}
+          </div>
+          <pre class="log-output">${formatServiceLogs(service.logs)}</pre>
+        </section>
+      `,
+    )
+    .join("");
+}
+
 createForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const formData = new FormData(createForm);
   const name = formData.get("name");
+  const phoenixChain = formData.get("phoenixChain");
+  const phoenixAutoLiquidityOff = formData.get("phoenixAutoLiquidityOff") === "on";
 
   try {
     setFeedback("Creating instance. The first build can take a while...", "neutral");
     const response = await fetch("/api/instances", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, phoenixChain, phoenixAutoLiquidityOff }),
     });
     const payload = await response.json();
 
@@ -337,6 +405,34 @@ tableWrapper.addEventListener("click", async (event) => {
 
     if (action === "copy-local") {
       await copyUrl(button.dataset.url, "Localhost URL copied to clipboard");
+      return;
+    }
+
+    if (action === "diagnostics") {
+      await openDiagnosticsDialog(instanceId);
+      return;
+    }
+
+    if (action === "switch-chain") {
+      const nextChain = button.dataset.chain || "mainnet";
+      const confirmed = await openConfirmDialog({
+        title: `Switch ${instanceId} to ${nextChain}`,
+        message: `This will stop the instance and recreate its services on ${nextChain}. Existing Phoenixd data will be kept.`,
+        confirmLabel: `Switch to ${nextChain}`,
+      });
+      if (!confirmed) {
+        return;
+      }
+
+      await mutateInstance(
+        `/api/instances/${instanceId}/phoenix-chain`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phoenixChain: nextChain }),
+        },
+        `Instance switch to ${nextChain} started`,
+      );
       return;
     }
 
