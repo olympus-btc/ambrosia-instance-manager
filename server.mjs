@@ -2,8 +2,9 @@ import { createServer } from "node:http";
 import crypto from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+
+import qrcode from "qr.js";
 
 import {
   createInstance,
@@ -22,8 +23,6 @@ const projectRoot = __dirname;
 const publicDir = path.join(projectRoot, "public");
 const port = Number.parseInt(process.env.ADMIN_PORT || "3010", 10);
 const host = process.env.ADMIN_HOST || "127.0.0.1";
-const require = createRequire(import.meta.url);
-const qrcode = require("./vendor/qr.js");
 const jobs = new Map();
 
 const MIME_TYPES = {

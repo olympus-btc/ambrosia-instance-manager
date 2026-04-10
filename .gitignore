@@ -1,2 +1,3 @@
 .ambrosia-instances/
 .DS_Store
+node_modules/
