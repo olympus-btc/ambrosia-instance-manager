@@ -14,6 +14,7 @@ import {
   startInstance,
   stopInstance,
   switchInstancePhoenixChain,
+  toggleInstanceAutoLiquidity,
 } from "./src/instances.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -248,6 +249,17 @@ const server = createServer(async (request, response) => {
       const body = await readJsonBody(request);
       const job = createJob({ action: "switch_chain", instanceId });
       runJob(job, (options) => switchInstancePhoenixChain(instanceId, body?.phoenixChain, options));
+      statusCode = 202;
+      sendJson(response, 202, { job });
+      return;
+    }
+
+    const autoLiquidityMatch = url.pathname.match(/^\/api\/instances\/([^/]+)\/toggle-autoliquidity$/);
+    if (method === "POST" && autoLiquidityMatch) {
+      const [, instanceId] = autoLiquidityMatch;
+      const body = await readJsonBody(request);
+      const job = createJob({ action: "toggle_autoliquidity", instanceId });
+      runJob(job, (options) => toggleInstanceAutoLiquidity(instanceId, body?.phoenixAutoLiquidityOff, options));
       statusCode = 202;
       sendJson(response, 202, { job });
       return;

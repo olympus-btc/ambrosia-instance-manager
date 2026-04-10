@@ -81,6 +81,7 @@ function formatActionLabel(action) {
     stop: "Stopping instance",
     rebuild: "Rebuilding instance",
     switch_chain: "Switching Phoenix chain",
+    toggle_autoliquidity: "Toggling auto-liquidity",
     delete: "Deleting instance",
   }[action] || "Running operation";
 }
@@ -175,6 +176,8 @@ function renderInstanceCard(instance) {
   const isStopped = status === "stopped";
   const nextChain = (instance.phoenixChain || "mainnet") === "mainnet" ? "testnet" : "mainnet";
   const switchLabel = nextChain === "mainnet" ? "Mainnet" : "Testnet";
+  const liquidityLabel = instance.phoenixAutoLiquidityOff ? "Auto liquidity" : "Manual liquidity";
+  const liquidityNext = instance.phoenixAutoLiquidityOff ? false : true;
 
   const jobMeta = activeJob
     ? `<div class="instance-card-progress">
@@ -221,6 +224,7 @@ function renderInstanceCard(instance) {
           ${isStopped ? `<button data-action="start" data-id="${escapeHtml(instance.id)}" class="secondary" ${disabled}>Start</button>` : ""}
           ${isRunning ? `<button data-action="stop" data-id="${escapeHtml(instance.id)}" class="secondary" ${disabled}>Stop</button>` : ""}
           <button data-action="switch-chain" data-id="${escapeHtml(instance.id)}" data-chain="${escapeHtml(nextChain)}" class="secondary" ${disabled}>${switchLabel}</button>
+          <button data-action="toggle-liquidity" data-id="${escapeHtml(instance.id)}" data-enabled="${escapeHtml(String(liquidityNext))}" class="secondary" ${disabled}>${liquidityLabel}</button>
           <button data-action="rebuild" data-id="${escapeHtml(instance.id)}" class="secondary" ${disabled}>Rebuild</button>
         </div>
         <div class="action-group action-group-danger">
@@ -515,6 +519,30 @@ tableWrapper.addEventListener("click", async (event) => {
 
     if (action === "diagnostics") {
       await openDiagnosticsDialog(instanceId);
+      return;
+    }
+
+    if (action === "toggle-liquidity") {
+      const enabled = button.dataset.enabled === "true";
+      const modeLabel = enabled ? "manual liquidity" : "auto liquidity";
+      const confirmed = await openConfirmDialog({
+        title: `Switch ${instanceId} to ${modeLabel}`,
+        message: `This will stop the instance and recreate its services with ${modeLabel}. Existing Phoenixd data will be kept.`,
+        confirmLabel: `Switch to ${modeLabel}`,
+      });
+      if (!confirmed) {
+        return;
+      }
+
+      await mutateInstance(
+        `/api/instances/${instanceId}/toggle-autoliquidity`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phoenixAutoLiquidityOff: enabled }),
+        },
+        `Switch to ${modeLabel} started`,
+      );
       return;
     }
 

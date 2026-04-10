@@ -491,6 +491,48 @@ export async function rebuildInstance(instanceId, options = {}) {
   return decorateInstance(instance, "running");
 }
 
+export async function toggleInstanceAutoLiquidity(instanceId, enabled, options = {}) {
+  const reportProgress = createProgressReporter(options.reportProgress);
+  const { registry, instance } = await getInstanceOrThrow(instanceId);
+  const currentValue = resolvePhoenixAutoLiquidityOff(instance.phoenixAutoLiquidityOff);
+  const nextValue = resolvePhoenixAutoLiquidityOff(enabled);
+
+  if (currentValue === nextValue) {
+    return decorateInstance(instance, instance.status || "running");
+  }
+
+  instance.status = "rebuilding";
+  instance.phoenixAutoLiquidityOff = nextValue;
+  await writeRegistry(registry);
+  await writeEnvFile(instance);
+
+  reportProgress({
+    step: "stopping_services",
+    message: "Stopping services before toggling auto-liquidity",
+    progress: 30,
+    instanceId,
+  });
+  await runCompose(instance, ["down"]);
+
+  reportProgress({
+    step: "starting_services",
+    message: `Recreating services with ${nextValue ? "manual" : "auto"} liquidity`,
+    progress: 70,
+    instanceId,
+  });
+  await runCompose(instance, ["up", "-d", "--force-recreate"]);
+
+  instance.status = "running";
+  await writeRegistry(registry);
+  reportProgress({
+    step: "completed",
+    message: `Instance switched to ${nextValue ? "manual" : "auto"} liquidity`,
+    progress: 100,
+    instanceId,
+  });
+  return decorateInstance(instance, "running");
+}
+
 export async function switchInstancePhoenixChain(instanceId, phoenixChain, options = {}) {
   const reportProgress = createProgressReporter(options.reportProgress);
   const { registry, instance } = await getInstanceOrThrow(instanceId);
