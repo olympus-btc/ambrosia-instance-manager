@@ -298,9 +298,13 @@ const server = createServer(async (request, response) => {
   }
 });
 
-server.listen(port, host, () => {
-  log("info", `Ambrosia instance manager available at http://${host}:${port}`);
-});
+export { server };
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  server.listen(port, host, () => {
+    log("info", `Ambrosia instance manager available at http://${host}:${port}`);
+  });
+}
 
 process.on("uncaughtException", (error) => {
   log("error", "Uncaught exception", error);
