@@ -2,13 +2,15 @@ const feedback = document.querySelector("#feedback");
 const tableWrapper = document.querySelector("#table-wrapper");
 const createForm = document.querySelector("#create-form");
 const createInput = document.querySelector("#instance-name");
+const chainSelect = document.querySelector("#phoenix-chain");
+const autoLiquidityCheckbox = document.querySelector("#phoenix-auto-liquidity-off");
 const refreshButton = document.querySelector("#refresh-button");
 const themeToggle = document.querySelector("#theme-toggle");
 const jobPanel = document.querySelector("#job-panel");
 const jobTitle = document.querySelector("#job-title");
 const jobStatus = document.querySelector("#job-status");
-const jobMessage = document.querySelector("#job-message");
 const jobProgressBar = document.querySelector("#job-progress-bar");
+const jobSteps = document.querySelector("#job-steps");
 const qrDialog = document.querySelector("#qr-dialog");
 const qrTitle = document.querySelector("#qr-title");
 const qrImage = document.querySelector("#qr-image");
@@ -18,6 +20,13 @@ const confirmDialog = document.querySelector("#confirm-dialog");
 const confirmTitle = document.querySelector("#confirm-title");
 const confirmMessage = document.querySelector("#confirm-message");
 const confirmAcceptButton = document.querySelector("#confirm-accept-button");
+const diagnosticsDialog = document.querySelector("#diagnostics-dialog");
+const diagnosticsTitle = document.querySelector("#diagnostics-title");
+const diagnosticsSummary = document.querySelector("#diagnostics-summary");
+const diagnosticsContent = document.querySelector("#diagnostics-content");
+const diagnosticsServicesBar = document.querySelector("#diagnostics-services-bar");
+const diagnosticsRefreshBtn = document.querySelector("#diagnostics-refresh");
+const diagnosticsAutorefreshBtn = document.querySelector("#diagnostics-autorefresh");
 const THEME_STORAGE_KEY = "ambrosia-admin-theme";
 let instancesCache = [];
 let jobsCache = [];
@@ -71,6 +80,8 @@ function formatActionLabel(action) {
     start: "Starting instance",
     stop: "Stopping instance",
     rebuild: "Rebuilding instance",
+    switch_chain: "Switching Phoenix chain",
+    toggle_autoliquidity: "Toggling auto-liquidity",
     delete: "Deleting instance",
   }[action] || "Running operation";
 }
@@ -98,8 +109,32 @@ function renderJobPanel() {
   jobPanel.hidden = false;
   jobTitle.textContent = formatActionLabel(activeJob.action);
   jobStatus.textContent = activeJob.status;
-  jobMessage.textContent = activeJob.message || "Running operation";
   jobProgressBar.style.width = `${Math.max(6, activeJob.progress || 0)}%`;
+
+  const steps = activeJob.steps || [];
+  const isTerminal = activeJob.status === "completed" || activeJob.status === "failed";
+
+  jobSteps.innerHTML = steps.map((s, i) => {
+    const isLast = i === steps.length - 1;
+    let icon;
+    let cls;
+    if (activeJob.status === "failed" && isLast) {
+      icon = "\u2717";
+      cls = "job-step-failed";
+    } else if (isTerminal && isLast) {
+      icon = "\u2713";
+      cls = "job-step-done";
+    } else if (isLast && activeJob.status === "running") {
+      icon = "\u25CF";
+      cls = "job-step-active";
+    } else {
+      icon = "\u2713";
+      cls = "job-step-done";
+    }
+    return `<div class="job-step ${cls}"><span class="job-step-icon">${icon}</span> <span class="job-step-text">${escapeHtml(s.message)}</span></div>`;
+  }).join("");
+
+  jobSteps.scrollTop = jobSteps.scrollHeight;
 }
 
 function updateBusyState() {
@@ -107,6 +142,12 @@ function updateBusyState() {
   const isCreateRunning = activeJobs.some((job) => job.action === "create");
 
   createInput.disabled = isCreateRunning;
+  if (chainSelect) {
+    chainSelect.disabled = isCreateRunning;
+  }
+  if (autoLiquidityCheckbox) {
+    autoLiquidityCheckbox.disabled = isCreateRunning;
+  }
   createForm.querySelector('button[type="submit"]').disabled = isCreateRunning;
   refreshButton.disabled = activeJobs.length > 0;
 }
@@ -123,60 +164,77 @@ function renderInstances(instances) {
     return;
   }
 
-  tableWrapper.innerHTML = `
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Status</th>
-          <th>Frontend</th>
-          <th>API</th>
-          <th>Phoenixd</th>
-          <th>Created</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${instances
-          .map(
-            (instance) => {
-              const activeJob = findInstanceJob(instance.id);
-              const isLocked = Boolean(activeJob);
-              const disabled = isLocked ? "disabled" : "";
-              const jobMeta = activeJob
-                ? `<div class="instance-job">${escapeHtml(activeJob.message || formatActionLabel(activeJob.action))}</div>`
-                : "";
+  tableWrapper.innerHTML = `<div class="instance-grid">${instances.map(renderInstanceCard).join("")}</div>`;
+}
 
-              return `
-              <tr>
-                <td>
-                  <strong>${escapeHtml(instance.name)}</strong>
-                  <div class="subtle">${escapeHtml(instance.id)}</div>
-                  ${jobMeta}
-                </td>
-                <td>${statusBadge(instance.status)}</td>
-                <td><a href="${escapeHtml(instance.frontendUrl)}" target="_blank" rel="noreferrer">${escapeHtml(instance.frontendUrl)}</a></td>
-                <td><code>${escapeHtml(instance.apiUrl)}</code></td>
-                <td><code>${escapeHtml(instance.phoenixUrl)}</code></td>
-                <td>${new Date(instance.createdAt).toLocaleString()}</td>
-                <td>
-                  <div class="actions">
-                    <button data-action="open" data-id="${escapeHtml(instance.id)}" ${disabled}>Open</button>
-                    <button data-action="qr" data-id="${escapeHtml(instance.id)}" data-url="${escapeHtml(instance.frontendUrl)}" data-name="${escapeHtml(instance.name)}" class="secondary" ${disabled}>QR</button>
-                    <button data-action="copy-local" data-id="${escapeHtml(instance.id)}" data-url="${escapeHtml(instance.localFrontendUrl)}" class="secondary" ${disabled}>Copy localhost</button>
-                    <button data-action="rebuild" data-id="${escapeHtml(instance.id)}" class="secondary" ${disabled}>Rebuild</button>
-                    <button data-action="start" data-id="${escapeHtml(instance.id)}" class="secondary" ${disabled}>Start</button>
-                    <button data-action="stop" data-id="${escapeHtml(instance.id)}" class="secondary" ${disabled}>Stop</button>
-                    <button data-action="delete" data-id="${escapeHtml(instance.id)}" class="danger" ${disabled}>Delete</button>
-                  </div>
-                </td>
-              </tr>
-            `;
-            },
-          )
-          .join("")}
-      </tbody>
-    </table>
+function renderInstanceCard(instance) {
+  const activeJob = findInstanceJob(instance.id);
+  const isLocked = Boolean(activeJob);
+  const disabled = isLocked ? "disabled" : "";
+  const status = instance.status || "unknown";
+  const isRunning = status === "running";
+  const isStopped = status === "stopped";
+  const nextChain = (instance.phoenixChain || "mainnet") === "mainnet" ? "testnet" : "mainnet";
+  const switchLabel = nextChain === "mainnet" ? "Mainnet" : "Testnet";
+  const liquidityLabel = instance.phoenixAutoLiquidityOff ? "Auto liquidity" : "Manual liquidity";
+  const liquidityNext = instance.phoenixAutoLiquidityOff ? false : true;
+
+  const jobMeta = activeJob
+    ? `<div class="instance-card-progress">
+         <div class="instance-card-progress-bar" style="width:${Math.max(6, activeJob.progress || 0)}%"></div>
+       </div>
+       <div class="instance-job">${escapeHtml(activeJob.message || formatActionLabel(activeJob.action))}</div>`
+    : "";
+
+  return `
+    <div class="instance-card" data-instance="${escapeHtml(instance.id)}">
+      <div class="instance-card-header">
+        <div class="instance-card-title">
+          <strong class="instance-name">${escapeHtml(instance.name)}</strong>
+          <span class="subtle">${escapeHtml(instance.id)}</span>
+        </div>
+        <div class="instance-card-badges">
+          ${statusBadge(status)}
+          ${statusBadge(instance.phoenixChain || "mainnet")}
+          ${statusBadge(instance.phoenixAutoLiquidityOff ? "manual liquidity" : "auto liquidity")}
+        </div>
+      </div>
+
+      ${jobMeta}
+
+      <div class="instance-card-urls">
+        <a href="${escapeHtml(instance.frontendUrl)}" target="_blank" rel="noreferrer" class="instance-url instance-url-frontend">
+          <span class="instance-url-label">Frontend</span>
+          <span class="instance-url-value">${escapeHtml(instance.frontendUrl)}</span>
+        </a>
+        <div class="instance-url-group">
+          <span class="instance-url-item"><span class="instance-url-label">API</span> <code>${escapeHtml(instance.apiUrl)}</code></span>
+          <span class="instance-url-item"><span class="instance-url-label">Phoenixd</span> <code>${escapeHtml(instance.phoenixUrl)}</code></span>
+        </div>
+      </div>
+
+      <div class="instance-card-actions">
+        <div class="action-group action-group-primary">
+          <button data-action="open" data-id="${escapeHtml(instance.id)}" ${disabled}>Open</button>
+          <button data-action="diagnostics" data-id="${escapeHtml(instance.id)}" class="secondary" ${disabled}>Logs</button>
+          <button data-action="qr" data-id="${escapeHtml(instance.id)}" data-url="${escapeHtml(instance.frontendUrl)}" data-name="${escapeHtml(instance.name)}" class="secondary" ${disabled}>QR</button>
+          <button data-action="copy-local" data-id="${escapeHtml(instance.id)}" data-url="${escapeHtml(instance.localFrontendUrl)}" class="secondary" ${disabled}>Copy localhost</button>
+        </div>
+        <div class="action-group action-group-secondary">
+          ${isStopped ? `<button data-action="start" data-id="${escapeHtml(instance.id)}" class="secondary" ${disabled}>Start</button>` : ""}
+          ${isRunning ? `<button data-action="stop" data-id="${escapeHtml(instance.id)}" class="secondary" ${disabled}>Stop</button>` : ""}
+          <button data-action="switch-chain" data-id="${escapeHtml(instance.id)}" data-chain="${escapeHtml(nextChain)}" class="secondary" ${disabled}>${switchLabel}</button>
+          <button data-action="toggle-liquidity" data-id="${escapeHtml(instance.id)}" data-enabled="${escapeHtml(String(liquidityNext))}" class="secondary" ${disabled}>${liquidityLabel}</button>
+          <button data-action="rebuild" data-id="${escapeHtml(instance.id)}" class="secondary" ${disabled}>Rebuild</button>
+        </div>
+        <div class="action-group action-group-danger">
+          <button data-action="delete" data-id="${escapeHtml(instance.id)}" class="danger" ${disabled}>Delete</button>
+        </div>
+        <div class="instance-card-meta">
+          <span class="subtle">Created ${new Date(instance.createdAt).toLocaleDateString()}</span>
+        </div>
+      </div>
+    </div>
   `;
 }
 
@@ -274,17 +332,136 @@ async function copyUrl(url, successMessage) {
   setFeedback(successMessage, "good");
 }
 
+let diagnosticsState = { instanceId: null, services: [], activeService: null, autoRefresh: false, autoRefreshTimer: null };
+
+function formatLogLines(raw) {
+  if (!raw) return '<span class="log-empty">No logs available.</span>';
+  const lines = raw.split("\n");
+  return lines.map((line, i) => {
+    const num = String(i + 1).padStart(String(lines.length).length, " ");
+    return `<span class="log-ln">${num}</span><span class="log-lv">${escapeHtml(line)}</span>`;
+  }).join("\n");
+}
+
+function renderDiagnosticsServices() {
+  const { services, activeService } = diagnosticsState;
+  diagnosticsServicesBar.innerHTML = services.map((s) => {
+    const isActive = s.name === activeService;
+    const stateNorm = `${s.state}`.toLowerCase();
+    const dotCls = stateNorm.includes("running") ? "svc-dot-good" : stateNorm.includes("exited") || stateNorm.includes("stopped") ? "svc-dot-bad" : "svc-dot-warn";
+    return `<button type="button" class="diagnostics-tab ${isActive ? "diagnostics-tab-active" : ""}" data-svc="${escapeHtml(s.name)}"><span class="svc-dot ${dotCls}"></span>${escapeHtml(s.name)}</button>`;
+  }).join("");
+}
+
+function renderDiagnosticsContent() {
+  const { services, activeService } = diagnosticsState;
+  const svc = services.find((s) => s.name === activeService);
+  if (!svc) return;
+
+  const meta = [
+    svc.image ? `<span class="diag-meta"><span class="diag-meta-label">Image</span> <code>${escapeHtml(svc.image)}</code></span>` : "",
+    svc.ports.length ? `<span class="diag-meta"><span class="diag-meta-label">Ports</span> <code>${svc.ports.map(escapeHtml).join(", ")}</code></span>` : "",
+    svc.exitCode !== null ? `<span class="diag-meta"><span class="diag-meta-label">Exit</span> <code>${svc.exitCode}</code></span>` : "",
+  ].filter(Boolean).join("");
+
+  diagnosticsSummary.textContent = diagnosticsState.summary || "No summary available";
+  diagnosticsContent.innerHTML = `
+    <section class="diagnostic-service">
+      <div class="diagnostic-service-header">
+        <div class="diag-header-left">
+          ${statusBadge(svc.state || "unknown")}
+          ${meta ? `<div class="diag-meta-row">${meta}</div>` : ""}
+        </div>
+      </div>
+      <pre class="log-output">${formatLogLines(svc.logs)}</pre>
+    </section>
+  `;
+  diagnosticsContent.scrollTop = diagnosticsContent.scrollHeight;
+}
+
+async function loadDiagnostics(instanceId) {
+  const response = await fetch(`/api/instances/${instanceId}/diagnostics`);
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error || "Failed to load diagnostics");
+
+  const prevActive = diagnosticsState.activeService;
+  diagnosticsState.services = payload.services || [];
+  diagnosticsState.summary = payload.summary || "";
+  diagnosticsState.activeService = prevActive && diagnosticsState.services.some((s) => s.name === prevActive)
+    ? prevActive
+    : (diagnosticsState.services[0]?.name || null);
+
+  renderDiagnosticsServices();
+  renderDiagnosticsContent();
+}
+
+function stopDiagnosticsAutoRefresh() {
+  if (diagnosticsState.autoRefreshTimer) {
+    window.clearInterval(diagnosticsState.autoRefreshTimer);
+    diagnosticsState.autoRefreshTimer = null;
+  }
+}
+
+async function openDiagnosticsDialog(instanceId) {
+  diagnosticsState = { instanceId, services: [], activeService: null, autoRefresh: false, autoRefreshTimer: null };
+  diagnosticsTitle.textContent = `Diagnostics for ${instanceId}`;
+  diagnosticsSummary.textContent = "Loading diagnostics...";
+  diagnosticsContent.innerHTML = "";
+  diagnosticsServicesBar.innerHTML = "";
+  diagnosticsAutorefreshBtn.textContent = "Auto-refresh: off";
+  diagnosticsDialog.showModal();
+
+  await loadDiagnostics(instanceId);
+}
+
+diagnosticsServicesBar.addEventListener("click", (event) => {
+  const tab = event.target.closest(".diagnostics-tab");
+  if (!tab) return;
+  diagnosticsState.activeService = tab.dataset.svc;
+  renderDiagnosticsServices();
+  renderDiagnosticsContent();
+});
+
+diagnosticsRefreshBtn.addEventListener("click", async () => {
+  if (!diagnosticsState.instanceId) return;
+  try {
+    await loadDiagnostics(diagnosticsState.instanceId);
+  } catch (error) {
+    setFeedback(error.message, "bad");
+  }
+});
+
+diagnosticsAutorefreshBtn.addEventListener("click", () => {
+  diagnosticsState.autoRefresh = !diagnosticsState.autoRefresh;
+  diagnosticsAutorefreshBtn.textContent = `Auto-refresh: ${diagnosticsState.autoRefresh ? "on" : "off"}`;
+  if (diagnosticsState.autoRefresh) {
+    diagnosticsState.autoRefreshTimer = window.setInterval(async () => {
+      try {
+        await loadDiagnostics(diagnosticsState.instanceId);
+      } catch {}
+    }, 3000);
+  } else {
+    stopDiagnosticsAutoRefresh();
+  }
+});
+
+diagnosticsDialog.addEventListener("close", () => {
+  stopDiagnosticsAutoRefresh();
+});
+
 createForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const formData = new FormData(createForm);
   const name = formData.get("name");
+  const phoenixChain = formData.get("phoenixChain");
+  const phoenixAutoLiquidityOff = formData.get("phoenixAutoLiquidityOff") === "on";
 
   try {
     setFeedback("Creating instance. The first build can take a while...", "neutral");
     const response = await fetch("/api/instances", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, phoenixChain, phoenixAutoLiquidityOff }),
     });
     const payload = await response.json();
 
@@ -337,6 +514,58 @@ tableWrapper.addEventListener("click", async (event) => {
 
     if (action === "copy-local") {
       await copyUrl(button.dataset.url, "Localhost URL copied to clipboard");
+      return;
+    }
+
+    if (action === "diagnostics") {
+      await openDiagnosticsDialog(instanceId);
+      return;
+    }
+
+    if (action === "toggle-liquidity") {
+      const enabled = button.dataset.enabled === "true";
+      const modeLabel = enabled ? "manual liquidity" : "auto liquidity";
+      const confirmed = await openConfirmDialog({
+        title: `Switch ${instanceId} to ${modeLabel}`,
+        message: `This will stop the instance and recreate its services with ${modeLabel}. Existing Phoenixd data will be kept.`,
+        confirmLabel: `Switch to ${modeLabel}`,
+      });
+      if (!confirmed) {
+        return;
+      }
+
+      await mutateInstance(
+        `/api/instances/${instanceId}/toggle-autoliquidity`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phoenixAutoLiquidityOff: enabled }),
+        },
+        `Switch to ${modeLabel} started`,
+      );
+      return;
+    }
+
+    if (action === "switch-chain") {
+      const nextChain = button.dataset.chain || "mainnet";
+      const confirmed = await openConfirmDialog({
+        title: `Switch ${instanceId} to ${nextChain}`,
+        message: `This will stop the instance and recreate its services on ${nextChain}. Existing Phoenixd data will be kept.`,
+        confirmLabel: `Switch to ${nextChain}`,
+      });
+      if (!confirmed) {
+        return;
+      }
+
+      await mutateInstance(
+        `/api/instances/${instanceId}/phoenix-chain`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phoenixChain: nextChain }),
+        },
+        `Instance switch to ${nextChain} started`,
+      );
       return;
     }
 

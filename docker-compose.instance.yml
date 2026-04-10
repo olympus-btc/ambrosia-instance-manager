@@ -1,6 +1,17 @@
 services:
   phoenixd:
     image: ${PHOENIXD_IMAGE}
+    entrypoint:
+      - "sh"
+      - "-lc"
+    command:
+      - >
+        exec /phoenix/phoenixd
+        --agree-to-terms-of-service
+        --http-bind-ip 0.0.0.0
+        --chain="${PHOENIX_CHAIN}"
+        ${PHOENIX_AUTO_LIQUIDITY:+--auto-liquidity=${PHOENIX_AUTO_LIQUIDITY}}
+        ${PHOENIX_MAX_MINING_FEE:+--max-mining-fee=${PHOENIX_MAX_MINING_FEE}}
     restart: unless-stopped
     networks:
       - default
@@ -27,6 +38,8 @@ services:
   ambrosia-client:
     build:
       context: ${AMBROSIA_CLIENT_CONTEXT}
+      args:
+        NEXT_PUBLIC_PORT_API: ${API_PORT}
     image: ambrosia-client
     restart: unless-stopped
     networks:

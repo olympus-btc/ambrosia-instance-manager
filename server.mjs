@@ -8,10 +8,13 @@ import { fileURLToPath } from "node:url";
 import {
   createInstance,
   deleteInstance,
+  getInstanceDiagnostics,
   listInstances,
   rebuildInstance,
   startInstance,
   stopInstance,
+  switchInstancePhoenixChain,
+  toggleInstanceAutoLiquidity,
 } from "./src/instances.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -52,6 +55,7 @@ function listJobs() {
 }
 
 function createJob({ action, instanceId = null, targetName = null }) {
+  const now = new Date().toISOString();
   const job = {
     id: crypto.randomUUID(),
     action,
@@ -61,7 +65,8 @@ function createJob({ action, instanceId = null, targetName = null }) {
     progress: 0,
     step: "queued",
     message: "Queued",
-    startedAt: new Date().toISOString(),
+    steps: [{ step: "queued", message: "Queued", progress: 0, at: now }],
+    startedAt: now,
     finishedAt: null,
     error: null,
   };
@@ -72,7 +77,14 @@ function createJob({ action, instanceId = null, targetName = null }) {
 function updateJob(jobId, patch) {
   const existing = jobs.get(jobId);
   if (!existing) return;
-  jobs.set(jobId, { ...existing, ...patch });
+  const updated = { ...existing, ...patch };
+  if (patch.step && patch.step !== existing.step) {
+    updated.steps = [
+      ...(existing.steps || []),
+      { step: patch.step, message: patch.message || "", progress: patch.progress ?? 0, at: new Date().toISOString() },
+    ];
+  }
+  jobs.set(jobId, updated);
 }
 
 function runJob(job, task) {
@@ -182,6 +194,14 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    const diagnosticsMatch = url.pathname.match(/^\/api\/instances\/([^/]+)\/diagnostics$/);
+    if (method === "GET" && diagnosticsMatch) {
+      const [, instanceId] = diagnosticsMatch;
+      statusCode = 200;
+      sendJson(response, 200, await getInstanceDiagnostics(instanceId));
+      return;
+    }
+
     if (method === "GET" && url.pathname === "/api/qr") {
       const text = url.searchParams.get("text");
       if (!text) {
@@ -218,6 +238,28 @@ const server = createServer(async (request, response) => {
             ? stopInstance(instanceId, options)
             : rebuildInstance(instanceId, options),
       );
+      statusCode = 202;
+      sendJson(response, 202, { job });
+      return;
+    }
+
+    const chainSwitchMatch = url.pathname.match(/^\/api\/instances\/([^/]+)\/phoenix-chain$/);
+    if (method === "POST" && chainSwitchMatch) {
+      const [, instanceId] = chainSwitchMatch;
+      const body = await readJsonBody(request);
+      const job = createJob({ action: "switch_chain", instanceId });
+      runJob(job, (options) => switchInstancePhoenixChain(instanceId, body?.phoenixChain, options));
+      statusCode = 202;
+      sendJson(response, 202, { job });
+      return;
+    }
+
+    const autoLiquidityMatch = url.pathname.match(/^\/api\/instances\/([^/]+)\/toggle-autoliquidity$/);
+    if (method === "POST" && autoLiquidityMatch) {
+      const [, instanceId] = autoLiquidityMatch;
+      const body = await readJsonBody(request);
+      const job = createJob({ action: "toggle_autoliquidity", instanceId });
+      runJob(job, (options) => toggleInstanceAutoLiquidity(instanceId, body?.phoenixAutoLiquidityOff, options));
       statusCode = 202;
       sendJson(response, 202, { job });
       return;

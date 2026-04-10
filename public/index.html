@@ -38,9 +38,22 @@
       <section class="card">
         <form id="create-form" class="create-form">
           <label for="instance-name">New instance name</label>
-          <div class="row">
+          <div class="row create-primary-row">
             <input id="instance-name" name="name" type="text" placeholder="demo-store" maxlength="40" required />
             <button type="submit">Create instance</button>
+          </div>
+          <div class="create-options-row">
+            <div class="field-group">
+              <label for="phoenix-chain">Phoenixd network</label>
+              <select id="phoenix-chain" name="phoenixChain">
+                <option value="mainnet" selected>Mainnet</option>
+                <option value="testnet">Testnet</option>
+              </select>
+            </div>
+            <label class="checkbox-row" for="phoenix-auto-liquidity-off">
+              <input id="phoenix-auto-liquidity-off" name="phoenixAutoLiquidityOff" type="checkbox" />
+              <span>Disable auto-liquidity and cap max mining fee at 5000 sats</span>
+            </label>
           </div>
         </form>
         <p id="feedback" class="feedback" aria-live="polite"></p>
@@ -55,10 +68,10 @@
             </div>
             <span id="job-status" class="badge badge-warn">running</span>
           </div>
-          <p id="job-message" class="job-message"></p>
           <div class="job-progress-track" aria-hidden="true">
             <div id="job-progress-bar" class="job-progress-bar"></div>
           </div>
+          <div id="job-steps" class="job-steps"></div>
         </div>
 
         <div class="section-header">
@@ -106,6 +119,27 @@
         <div class="modal-actions">
           <button class="secondary" type="submit" value="cancel">Cancel</button>
           <button id="confirm-accept-button" class="danger" type="button">Confirm</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="diagnostics-dialog" class="modal-shell">
+      <form method="dialog" class="modal-card diagnostics-card">
+        <div class="section-header modal-header">
+          <div>
+            <p class="eyebrow">Instance diagnostics</p>
+            <h2 id="diagnostics-title">Service details</h2>
+          </div>
+          <div class="diagnostics-controls">
+            <button id="diagnostics-refresh" type="button" class="secondary">Refresh</button>
+            <button id="diagnostics-autorefresh" type="button" class="secondary">Auto-refresh: off</button>
+          </div>
+        </div>
+        <div id="diagnostics-services-bar" class="diagnostics-services-bar"></div>
+        <p id="diagnostics-summary" class="confirm-message"></p>
+        <div id="diagnostics-content" class="diagnostics-content"></div>
+        <div class="modal-actions">
+          <button class="secondary" type="submit" value="cancel">Close</button>
         </div>
       </form>
     </dialog>
