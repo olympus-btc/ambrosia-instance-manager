@@ -31,7 +31,7 @@ function createHttpError(statusCode, message) {
   return error;
 }
 
-function sanitizeName(input) {
+export function sanitizeName(input) {
   return String(input || "")
     .trim()
     .toLowerCase()
@@ -40,7 +40,7 @@ function sanitizeName(input) {
     .slice(0, 40);
 }
 
-function resolvePhoenixChain(value, { fallback = "mainnet", strict = false } = {}) {
+export function resolvePhoenixChain(value, { fallback = "mainnet", strict = false } = {}) {
   const normalized = String(value || "")
     .trim()
     .toLowerCase();
@@ -60,7 +60,7 @@ function resolvePhoenixChain(value, { fallback = "mainnet", strict = false } = {
   return fallback;
 }
 
-function resolvePhoenixAutoLiquidityOff(value) {
+export function resolvePhoenixAutoLiquidityOff(value) {
   if (typeof value === "boolean") {
     return value;
   }
