@@ -66,12 +66,36 @@
             <h2>HTTPS tunnels</h2>
           </div>
           <div class="tunnel-tabs">
-            <button type="button" id="tab-ngrok" class="tunnel-tab active">Ngrok</button>
+            <button type="button" id="tab-cloudflare" class="tunnel-tab active">Cloudflare Tunnel</button>
+            <button type="button" id="tab-ngrok" class="tunnel-tab">Ngrok</button>
             <button type="button" id="tab-nginx" class="tunnel-tab">Nginx + Let's Encrypt</button>
           </div>
         </div>
 
-        <div id="panel-ngrok" class="tunnel-panel">
+        <div id="panel-cloudflare" class="tunnel-panel">
+          <div id="cloudflare-status-badges"></div>
+          <form id="cloudflare-form" class="proxy-form">
+            <div class="proxy-fields">
+              <div class="field-group">
+                <label for="cloudflare-token">Tunnel token</label>
+                <input id="cloudflare-token" name="tunnelToken" type="password" placeholder="Paste your Cloudflare tunnel token" />
+              </div>
+              <div class="field-group">
+                <label for="cloudflare-domain">Domain</label>
+                <input id="cloudflare-domain" name="domain" type="text" placeholder="ambrosia.example.com" />
+              </div>
+            </div>
+            <p class="proxy-hint">Create a tunnel in <a href="https://one.dash.cloudflare.com/" target="_blank" rel="noreferrer">Cloudflare Zero Trust</a> → Networks → Tunnels → Create tunnel. Copy the tunnel token. Then add CNAME records for each instance pointing to the tunnel.</p>
+            <div class="proxy-actions">
+              <button type="submit">Save and start tunnel</button>
+              <button type="button" id="cloudflare-enable-button" class="secondary">Start tunnel</button>
+              <button type="button" id="cloudflare-disable-button" class="secondary">Stop tunnel</button>
+            </div>
+          </form>
+          <p id="cloudflare-feedback" class="feedback" aria-live="polite"></p>
+        </div>
+
+        <div id="panel-ngrok" class="tunnel-panel" hidden>
           <div id="ngrok-status-badges"></div>
           <form id="ngrok-form" class="proxy-form">
             <div class="proxy-fields">

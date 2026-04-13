@@ -44,6 +44,15 @@ const ngrokFeedback = document.querySelector("#ngrok-feedback");
 const ngrokStatusBadges = document.querySelector("#ngrok-status-badges");
 const ngrokEnableButton = document.querySelector("#ngrok-enable-button");
 const ngrokDisableButton = document.querySelector("#ngrok-disable-button");
+const tabCloudflare = document.querySelector("#tab-cloudflare");
+const panelCloudflare = document.querySelector("#panel-cloudflare");
+const cloudflareForm = document.querySelector("#cloudflare-form");
+const cloudflareTokenInput = document.querySelector("#cloudflare-token");
+const cloudflareDomainInput = document.querySelector("#cloudflare-domain");
+const cloudflareFeedback = document.querySelector("#cloudflare-feedback");
+const cloudflareStatusBadges = document.querySelector("#cloudflare-status-badges");
+const cloudflareEnableButton = document.querySelector("#cloudflare-enable-button");
+const cloudflareDisableButton = document.querySelector("#cloudflare-disable-button");
 const THEME_STORAGE_KEY = "ambrosia-admin-theme";
 let instancesCache = [];
 let jobsCache = [];
@@ -672,19 +681,20 @@ function setNgrokFeedback(message, tone = "neutral") {
   ngrokFeedback.dataset.tone = tone;
 }
 
-if (tabNgrok && tabNginx && panelNgrok && panelNginx) {
-  tabNgrok.addEventListener("click", () => {
-    tabNgrok.classList.add("active");
-    tabNginx.classList.remove("active");
-    panelNgrok.hidden = false;
-    panelNginx.hidden = true;
-  });
-  tabNginx.addEventListener("click", () => {
-    tabNginx.classList.add("active");
-    tabNgrok.classList.remove("active");
-    panelNginx.hidden = false;
-    panelNgrok.hidden = true;
-  });
+if (tabNgrok && tabNginx && tabCloudflare && panelNgrok && panelNginx && panelCloudflare) {
+  const allTabs = [tabCloudflare, tabNgrok, tabNginx];
+  const allPanels = [panelCloudflare, panelNgrok, panelNginx];
+
+  function switchTab(activeTab, activePanel) {
+    allTabs.forEach((t) => t.classList.remove("active"));
+    allPanels.forEach((p) => p.hidden = true);
+    activeTab.classList.add("active");
+    activePanel.hidden = false;
+  }
+
+  tabCloudflare.addEventListener("click", () => switchTab(tabCloudflare, panelCloudflare));
+  tabNgrok.addEventListener("click", () => switchTab(tabNgrok, panelNgrok));
+  tabNginx.addEventListener("click", () => switchTab(tabNginx, panelNginx));
 }
 
 async function loadNgrokStatus() {
@@ -851,9 +861,114 @@ if (proxyRenewButton) {
   });
 }
 
+function setCloudflareFeedback(message, tone = "neutral") {
+  if (!cloudflareFeedback) return;
+  cloudflareFeedback.textContent = message;
+  cloudflareFeedback.dataset.tone = tone;
+}
+
+async function loadCloudflareStatus() {
+  try {
+    const response = await fetch("/api/cloudflare");
+    const cf = await response.json();
+    if (!response.ok) return;
+
+    if (cloudflareStatusBadges) {
+      const badges = [];
+      if (!cf.installed) {
+        badges.push('<span class="badge badge-bad">cloudflared not installed</span>');
+      } else if (cf.enabled) {
+        badges.push('<span class="badge badge-good">Cloudflare enabled</span>');
+      } else {
+        badges.push('<span class="badge badge-muted">Cloudflare disabled</span>');
+      }
+      if (cf.running) badges.push('<span class="badge badge-good">Tunnel active</span>');
+      if (cf.tunnelToken) badges.push('<span class="badge badge-muted">Token configured</span>');
+      if (cf.domain) badges.push(`<span class="badge badge-muted">${escapeHtml(cf.domain)}</span>`);
+      badges.push('<span class="badge badge-muted">Free, unlimited tunnels</span>');
+      cloudflareStatusBadges.innerHTML = badges.join("");
+    }
+
+    if (cloudflareDomainInput && cf.domain) cloudflareDomainInput.value = cf.domain;
+  } catch { /* ignore */ }
+}
+
+if (cloudflareForm) {
+  cloudflareForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const tunnelToken = cloudflareTokenInput?.value?.trim();
+    const domain = cloudflareDomainInput?.value?.trim();
+
+    if (!tunnelToken && !domain) {
+      setCloudflareFeedback("Tunnel token or domain is required", "bad");
+      return;
+    }
+
+    try {
+      if (tunnelToken) {
+        setCloudflareFeedback("Configuring Cloudflare tunnel...", "neutral");
+        const res = await fetch("/api/cloudflare/configure", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tunnelToken }),
+        });
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error || "Configuration failed");
+      }
+
+      if (domain) {
+        setCloudflareFeedback("Setting domain...", "neutral");
+        const res = await fetch("/api/cloudflare/domain", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ domain }),
+        });
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error || "Failed to set domain");
+      }
+
+      setCloudflareFeedback("Cloudflare tunnel configured", "good");
+      cloudflareTokenInput.value = "";
+      await Promise.all([loadCloudflareStatus(), fetchInstances()]);
+    } catch (error) {
+      setCloudflareFeedback(error.message, "bad");
+    }
+  });
+}
+
+if (cloudflareEnableButton) {
+  cloudflareEnableButton.addEventListener("click", async () => {
+    try {
+      setCloudflareFeedback("Starting Cloudflare tunnel...", "neutral");
+      const response = await fetch("/api/cloudflare/enable", { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Failed to start");
+      setCloudflareFeedback("Tunnel started", "good");
+      await Promise.all([loadCloudflareStatus(), fetchInstances()]);
+    } catch (error) {
+      setCloudflareFeedback(error.message, "bad");
+    }
+  });
+}
+
+if (cloudflareDisableButton) {
+  cloudflareDisableButton.addEventListener("click", async () => {
+    try {
+      setCloudflareFeedback("Stopping Cloudflare tunnel...", "neutral");
+      const response = await fetch("/api/cloudflare/disable", { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Failed to stop");
+      setCloudflareFeedback("Tunnel stopped", "good");
+      await Promise.all([loadCloudflareStatus(), fetchInstances()]);
+    } catch (error) {
+      setCloudflareFeedback(error.message, "bad");
+    }
+  });
+}
+
 applyTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
 
-Promise.all([fetchInstances(), fetchJobs(), loadProxyStatus(), loadNgrokStatus()])
+Promise.all([fetchInstances(), fetchJobs(), loadProxyStatus(), loadNgrokStatus(), loadCloudflareStatus()])
   .then(() => {
     if (getActiveJobs().length > 0) {
       ensureJobsPolling();

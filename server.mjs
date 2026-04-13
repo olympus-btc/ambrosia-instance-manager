@@ -40,6 +40,17 @@ import {
   removeInstanceTunnels,
 } from './src/ngrok.mjs';
 
+import {
+  addInstanceToCloudflare,
+  configureCloudflare,
+  disableCloudflare,
+  enableCloudflare,
+  getCloudflareStatus,
+  getInstanceCloudflareUrls,
+  removeInstanceFromCloudflare,
+  setCloudflareDomain,
+} from './src/cloudflare.mjs';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = __dirname;
 const publicDir = path.join(projectRoot, 'public');
@@ -270,6 +281,39 @@ const server = createServer(async (request, response) => {
     if (method === 'POST' && url.pathname === '/api/ngrok/disable') {
       statusCode = 200;
       sendJson(response, 200, await disableNgrok());
+      return;
+    }
+
+    if (method === 'GET' && url.pathname === '/api/cloudflare') {
+      statusCode = 200;
+      sendJson(response, 200, await getCloudflareStatus());
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/api/cloudflare/configure') {
+      const body = await readJsonBody(request);
+      statusCode = 200;
+      sendJson(response, 200, await configureCloudflare(body));
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/api/cloudflare/domain') {
+      const body = await readJsonBody(request);
+      statusCode = 200;
+      sendJson(response, 200, await setCloudflareDomain(body));
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/api/cloudflare/enable') {
+      const instances = await listInstances();
+      statusCode = 200;
+      sendJson(response, 200, await enableCloudflare(instances));
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/api/cloudflare/disable') {
+      statusCode = 200;
+      sendJson(response, 200, await disableCloudflare());
       return;
     }
 

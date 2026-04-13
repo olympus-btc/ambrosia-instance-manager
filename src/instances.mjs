@@ -169,6 +169,15 @@ async function enhanceWithProxyUrls(instance) {
     }
   } catch { /* ngrok not configured */ }
 
+  try {
+    const { getInstanceCloudflareUrls } = await import('./cloudflare.mjs');
+    const cfUrls = await getInstanceCloudflareUrls(instance.id);
+    if (cfUrls) {
+      instance.proxyFrontendUrl = cfUrls.frontendUrl;
+      instance.proxyApiUrl = cfUrls.apiUrl;
+    }
+  } catch { /* cloudflare not configured */ }
+
   return instance;
 }
 
@@ -483,6 +492,11 @@ export async function createInstance(payload, options = {}) {
     await addInstanceTunnels(instance, registry.instances);
   } catch { /* ngrok not configured, skip */ }
 
+  try {
+    const { addInstanceToCloudflare } = await import('./cloudflare.mjs');
+    await addInstanceToCloudflare(instance, registry.instances);
+  } catch { /* cloudflare not configured, skip */ }
+
   return decorateInstance(instance, 'running');
 }
 
@@ -630,6 +644,11 @@ export async function deleteInstance(instanceId, options = {}) {
     const { removeInstanceTunnels } = await import('./ngrok.mjs');
     await removeInstanceTunnels(instanceId, registry.instances);
   } catch { /* ngrok not configured, skip */ }
+
+  try {
+    const { removeInstanceFromCloudflare } = await import('./cloudflare.mjs');
+    await removeInstanceFromCloudflare(instanceId, registry.instances);
+  } catch { /* cloudflare not configured, skip */ }
 
   reportProgress({ step: 'removing_containers', message: 'Removing containers and volumes', progress: 65, instanceId });
   await runCompose(instance, ['down', '-v']);
