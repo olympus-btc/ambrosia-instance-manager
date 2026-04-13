@@ -159,6 +159,16 @@ async function enhanceWithProxyUrls(instance) {
       instance.proxyApiUrl = proxyUrls.apiUrl;
     }
   } catch { /* proxy not configured */ }
+
+  try {
+    const { getInstanceNgrokUrls } = await import('./ngrok.mjs');
+    const ngrokUrls = await getInstanceNgrokUrls(instance.id);
+    if (ngrokUrls) {
+      instance.proxyFrontendUrl = ngrokUrls.frontendUrl;
+      instance.proxyApiUrl = ngrokUrls.apiUrl;
+    }
+  } catch { /* ngrok not configured */ }
+
   return instance;
 }
 
@@ -464,8 +474,14 @@ export async function createInstance(payload, options = {}) {
 
   try {
     const { addInstanceToProxy } = await import('./proxy.mjs');
-    await addInstanceToProxy(instance, registry.instances);
+    const allInstances = registry.instances;
+    await addInstanceToProxy(instance, allInstances);
   } catch { /* proxy not configured, skip */ }
+
+  try {
+    const { addInstanceTunnels } = await import('./ngrok.mjs');
+    await addInstanceTunnels(instance, registry.instances);
+  } catch { /* ngrok not configured, skip */ }
 
   return decorateInstance(instance, 'running');
 }
@@ -609,6 +625,11 @@ export async function deleteInstance(instanceId, options = {}) {
     const { removeInstanceFromProxy } = await import('./proxy.mjs');
     await removeInstanceFromProxy(instanceId, registry.instances);
   } catch { /* proxy not configured, skip */ }
+
+  try {
+    const { removeInstanceTunnels } = await import('./ngrok.mjs');
+    await removeInstanceTunnels(instanceId, registry.instances);
+  } catch { /* ngrok not configured, skip */ }
 
   reportProgress({ step: 'removing_containers', message: 'Removing containers and volumes', progress: 65, instanceId });
   await runCompose(instance, ['down', '-v']);

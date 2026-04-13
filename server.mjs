@@ -30,6 +30,16 @@ import {
   renewCertificates,
 } from './src/proxy.mjs';
 
+import {
+  addInstanceTunnels,
+  configureNgrok,
+  disableNgrok,
+  enableNgrok,
+  getInstanceNgrokUrls,
+  getNgrokStatus,
+  removeInstanceTunnels,
+} from './src/ngrok.mjs';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = __dirname;
 const publicDir = path.join(projectRoot, 'public');
@@ -234,6 +244,32 @@ const server = createServer(async (request, response) => {
       await refreshProxyConfig(instances);
       statusCode = 200;
       sendJson(response, 200, { ok: true });
+      return;
+    }
+
+    if (method === 'GET' && url.pathname === '/api/ngrok') {
+      statusCode = 200;
+      sendJson(response, 200, await getNgrokStatus());
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/api/ngrok/configure') {
+      const body = await readJsonBody(request);
+      statusCode = 200;
+      sendJson(response, 200, await configureNgrok(body));
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/api/ngrok/enable') {
+      const instances = await listInstances();
+      statusCode = 200;
+      sendJson(response, 200, await enableNgrok(instances));
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/api/ngrok/disable') {
+      statusCode = 200;
+      sendJson(response, 200, await disableNgrok());
       return;
     }
 

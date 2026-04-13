@@ -62,12 +62,36 @@
       <section class="card">
         <div class="section-header">
           <div>
-            <p class="eyebrow">Reverse proxy</p>
-            <h2>HTTPS / Nginx</h2>
+            <p class="eyebrow">Public access</p>
+            <h2>HTTPS tunnels</h2>
           </div>
-          <div id="proxy-status-badges"></div>
+          <div class="tunnel-tabs">
+            <button type="button" id="tab-ngrok" class="tunnel-tab active">Ngrok</button>
+            <button type="button" id="tab-nginx" class="tunnel-tab">Nginx + Let's Encrypt</button>
+          </div>
         </div>
-        <div id="proxy-content">
+
+        <div id="panel-ngrok" class="tunnel-panel">
+          <div id="ngrok-status-badges"></div>
+          <form id="ngrok-form" class="proxy-form">
+            <div class="proxy-fields">
+              <div class="field-group">
+                <label for="ngrok-authtoken">Authtoken</label>
+                <input id="ngrok-authtoken" name="authtoken" type="password" placeholder="Paste your ngrok authtoken" />
+              </div>
+            </div>
+            <p class="proxy-hint">Get your authtoken at <a href="https://dashboard.ngrok.com/get-started/your-authtoken" target="_blank" rel="noreferrer">dashboard.ngrok.com</a>. Free plan: 1 tunnel. Paid plan: multiple tunnels with stable domains.</p>
+            <div class="proxy-actions">
+              <button type="submit">Save and connect</button>
+              <button type="button" id="ngrok-enable-button" class="secondary">Start tunnels</button>
+              <button type="button" id="ngrok-disable-button" class="secondary">Stop tunnels</button>
+            </div>
+          </form>
+          <p id="ngrok-feedback" class="feedback" aria-live="polite"></p>
+        </div>
+
+        <div id="panel-nginx" class="tunnel-panel" hidden>
+          <div id="proxy-status-badges"></div>
           <form id="proxy-form" class="proxy-form">
             <div class="proxy-fields">
               <div class="field-group">
@@ -79,7 +103,7 @@
                 <input id="proxy-email" name="email" type="email" placeholder="admin@example.com" />
               </div>
             </div>
-            <p class="proxy-hint">Set up a wildcard DNS record (<code>*.ambrosia.example.com</code>) pointing to this server's IP before configuring. Requires port 80/443 open and public IP.</p>
+            <p class="proxy-hint">Set up a wildcard DNS record (<code>*.ambrosia.example.com</code>) pointing to this server's IP before configuring.</p>
             <div class="proxy-actions">
               <button type="submit" id="proxy-save-button">Save and obtain certificate</button>
               <button type="button" id="proxy-refresh-button" class="secondary">Refresh Nginx</button>

@@ -34,6 +34,16 @@ const proxyFeedback = document.querySelector("#proxy-feedback");
 const proxyStatusBadges = document.querySelector("#proxy-status-badges");
 const proxyRefreshButton = document.querySelector("#proxy-refresh-button");
 const proxyRenewButton = document.querySelector("#proxy-renew-button");
+const tabNgrok = document.querySelector("#tab-ngrok");
+const tabNginx = document.querySelector("#tab-nginx");
+const panelNgrok = document.querySelector("#panel-ngrok");
+const panelNginx = document.querySelector("#panel-nginx");
+const ngrokForm = document.querySelector("#ngrok-form");
+const ngrokAuthtokenInput = document.querySelector("#ngrok-authtoken");
+const ngrokFeedback = document.querySelector("#ngrok-feedback");
+const ngrokStatusBadges = document.querySelector("#ngrok-status-badges");
+const ngrokEnableButton = document.querySelector("#ngrok-enable-button");
+const ngrokDisableButton = document.querySelector("#ngrok-disable-button");
 const THEME_STORAGE_KEY = "ambrosia-admin-theme";
 let instancesCache = [];
 let jobsCache = [];
@@ -185,15 +195,19 @@ function renderInstanceCard(instance) {
   const switchLabel = nextChain === "mainnet" ? "Mainnet" : "Testnet";
   const liquidityLabel = instance.phoenixAutoLiquidityOff ? "Auto liquidity" : "Manual liquidity";
   const liquidityNext = instance.phoenixAutoLiquidityOff ? false : true;
+
   const displayUrl = instance.proxyFrontendUrl || instance.frontendUrl;
   const displayApiUrl = instance.proxyApiUrl || instance.apiUrl;
-  const proxyBadge = instance.proxyFrontendUrl ? '<span class="badge badge-good">https</span>' : "";
 
   const jobMeta = activeJob
     ? `<div class="instance-card-progress">
          <div class="instance-card-progress-bar" style="width:${Math.max(6, activeJob.progress || 0)}%"></div>
        </div>
        <div class="instance-job">${escapeHtml(activeJob.message || formatActionLabel(activeJob.action))}</div>`
+    : "";
+
+  const proxyBadge = instance.proxyFrontendUrl
+    ? '<span class="badge badge-good">https</span>'
     : "";
 
   return `
@@ -646,12 +660,117 @@ themeToggle?.addEventListener("click", () => {
   applyTheme(nextTheme);
 });
 
-applyTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
-
 function setProxyFeedback(message, tone = "neutral") {
   if (!proxyFeedback) return;
   proxyFeedback.textContent = message;
   proxyFeedback.dataset.tone = tone;
+}
+
+function setNgrokFeedback(message, tone = "neutral") {
+  if (!ngrokFeedback) return;
+  ngrokFeedback.textContent = message;
+  ngrokFeedback.dataset.tone = tone;
+}
+
+if (tabNgrok && tabNginx && panelNgrok && panelNginx) {
+  tabNgrok.addEventListener("click", () => {
+    tabNgrok.classList.add("active");
+    tabNginx.classList.remove("active");
+    panelNgrok.hidden = false;
+    panelNginx.hidden = true;
+  });
+  tabNginx.addEventListener("click", () => {
+    tabNginx.classList.add("active");
+    tabNgrok.classList.remove("active");
+    panelNginx.hidden = false;
+    panelNgrok.hidden = true;
+  });
+}
+
+async function loadNgrokStatus() {
+  try {
+    const response = await fetch("/api/ngrok");
+    const ngrok = await response.json();
+    if (!response.ok) return;
+
+    if (ngrokStatusBadges) {
+      const badges = [];
+      if (!ngrok.installed) {
+        badges.push('<span class="badge badge-bad">ngrok not installed</span>');
+      } else if (ngrok.enabled) {
+        badges.push('<span class="badge badge-good">Ngrok enabled</span>');
+      } else {
+        badges.push('<span class="badge badge-muted">Ngrok disabled</span>');
+      }
+      if (ngrok.running) badges.push('<span class="badge badge-good">Tunnels active</span>');
+      if (ngrok.authtoken) badges.push('<span class="badge badge-muted">Token configured</span>');
+      badges.push(`<span class="badge badge-muted">Limit: ${ngrok.maxTunnels || 3} tunnels (free plan)</span>`);
+      ngrokStatusBadges.innerHTML = badges.join("");
+    }
+
+    if (ngrok.tunnels && Object.keys(ngrok.tunnels).length > 0) {
+      const tunnelList = Object.entries(ngrok.tunnels).map(([name, url]) => {
+        return `<span class="instance-url-item"><span class="instance-url-label">${escapeHtml(name)}</span> <code>${escapeHtml(url)}</code></span>`;
+      }).join("");
+      ngrokStatusBadges.innerHTML += `<div class="ngrok-tunnel-list">${tunnelList}</div>`;
+    }
+  } catch { /* ignore */ }
+}
+
+if (ngrokForm) {
+  ngrokForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const authtoken = ngrokAuthtokenInput?.value?.trim();
+    if (!authtoken) {
+      setNgrokFeedback("Authtoken is required", "bad");
+      return;
+    }
+    try {
+      setNgrokFeedback("Configuring ngrok...", "neutral");
+      const response = await fetch("/api/ngrok/configure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ authtoken }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Configuration failed");
+      setNgrokFeedback("Ngrok configured. Start tunnels to expose instances.", "good");
+      ngrokAuthtokenInput.value = "";
+      await loadNgrokStatus();
+    } catch (error) {
+      setNgrokFeedback(error.message, "bad");
+    }
+  });
+}
+
+if (ngrokEnableButton) {
+  ngrokEnableButton.addEventListener("click", async () => {
+    try {
+      setNgrokFeedback("Starting ngrok tunnels...", "neutral");
+      const response = await fetch("/api/ngrok/enable", { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Failed to start");
+      setNgrokFeedback("Tunnels started", "good");
+      await Promise.all([loadNgrokStatus(), fetchInstances()]);
+    } catch (error) {
+      setNgrokFeedback(error.message, "bad");
+    }
+  });
+}
+
+if (ngrokDisableButton) {
+  ngrokDisableButton.addEventListener("click", async () => {
+    try {
+      setNgrokFeedback("Stopping ngrok tunnels...", "neutral");
+      const response = await fetch("/api/ngrok/disable", { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Failed to stop");
+      setNgrokFeedback("Tunnels stopped", "good");
+      await Promise.all([loadNgrokStatus(), fetchInstances()]);
+    } catch (error) {
+      setNgrokFeedback(error.message, "bad");
+    }
+  });
 }
 
 async function loadProxyStatus() {
@@ -732,7 +851,9 @@ if (proxyRenewButton) {
   });
 }
 
-Promise.all([fetchInstances(), fetchJobs(), loadProxyStatus()])
+applyTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
+
+Promise.all([fetchInstances(), fetchJobs(), loadProxyStatus(), loadNgrokStatus()])
   .then(() => {
     if (getActiveJobs().length > 0) {
       ensureJobsPolling();
