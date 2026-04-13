@@ -563,6 +563,46 @@ a {
   font-size: 0.82rem;
 }
 
+.proxy-form {
+  display: grid;
+  gap: 14px;
+}
+
+.proxy-fields {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.proxy-fields .field-group {
+  flex: 1;
+  min-width: 220px;
+}
+
+.proxy-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.proxy-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.proxy-actions button {
+  min-width: 140px;
+}
+
+#proxy-status-badges {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
 .modal-shell {
   border: none;
   padding: 0;

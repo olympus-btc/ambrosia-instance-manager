@@ -150,6 +150,18 @@ function getUrls(instance) {
   };
 }
 
+async function enhanceWithProxyUrls(instance) {
+  try {
+    const { getInstanceProxyUrls } = await import('./proxy.mjs');
+    const proxyUrls = await getInstanceProxyUrls(instance);
+    if (proxyUrls) {
+      instance.proxyFrontendUrl = proxyUrls.frontendUrl;
+      instance.proxyApiUrl = proxyUrls.apiUrl;
+    }
+  } catch { /* proxy not configured */ }
+  return instance;
+}
+
 function parseComposeJson(output) {
   const trimmed = output.trim();
   if (!trimmed) return [];
@@ -321,13 +333,18 @@ function decorateInstance(instance, runtimeStatus = instance.status || 'unknown'
   };
 }
 
+async function decorateInstanceWithProxy(instance, runtimeStatus = instance.status || 'unknown') {
+  const decorated = decorateInstance(instance, runtimeStatus);
+  return enhanceWithProxyUrls(decorated);
+}
+
 export async function listInstances() {
   const registry = await readRegistry();
   const instances = [];
 
   for (const instance of registry.instances) {
     const status = await inspectRuntimeStatus(instance);
-    instances.push(decorateInstance(instance, status));
+    instances.push(await decorateInstanceWithProxy(instance, status));
   }
 
   return instances.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
@@ -444,6 +461,12 @@ export async function createInstance(payload, options = {}) {
   }
 
   reportProgress({ step: 'completed', message: 'Instance is ready', progress: 100, instanceId: id });
+
+  try {
+    const { addInstanceToProxy } = await import('./proxy.mjs');
+    await addInstanceToProxy(instance, registry.instances);
+  } catch { /* proxy not configured, skip */ }
+
   return decorateInstance(instance, 'running');
 }
 
@@ -581,6 +604,12 @@ export async function deleteInstance(instanceId, options = {}) {
   reportProgress({ step: 'removing_registry', message: 'Removing instance from inventory', progress: 20, instanceId });
   registry.instances = registry.instances.filter((entry) => entry.id !== instanceId);
   await writeRegistry(registry);
+
+  try {
+    const { removeInstanceFromProxy } = await import('./proxy.mjs');
+    await removeInstanceFromProxy(instanceId, registry.instances);
+  } catch { /* proxy not configured, skip */ }
+
   reportProgress({ step: 'removing_containers', message: 'Removing containers and volumes', progress: 65, instanceId });
   await runCompose(instance, ['down', '-v']);
   await rm(getInstanceDirectory(instanceId), { recursive: true, force: true });

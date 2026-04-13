@@ -18,6 +18,18 @@ import {
   toggleInstanceAutoLiquidity,
 } from './src/instances.mjs';
 
+import {
+  addInstanceToProxy,
+  configureProxy,
+  disableProxy,
+  enableProxy,
+  getInstanceProxyUrls,
+  getProxyStatus,
+  refreshProxyConfig,
+  removeInstanceFromProxy,
+  renewCertificates,
+} from './src/proxy.mjs';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = __dirname;
 const publicDir = path.join(projectRoot, 'public');
@@ -182,6 +194,46 @@ const server = createServer(async (request, response) => {
     if (method === 'GET' && url.pathname === '/api/instances') {
       statusCode = 200;
       sendJson(response, 200, { instances: await listInstances() });
+      return;
+    }
+
+    if (method === 'GET' && url.pathname === '/api/proxy') {
+      statusCode = 200;
+      sendJson(response, 200, await getProxyStatus());
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/api/proxy/configure') {
+      const body = await readJsonBody(request);
+      statusCode = 200;
+      sendJson(response, 200, await configureProxy(body));
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/api/proxy/enable') {
+      statusCode = 200;
+      sendJson(response, 200, await enableProxy());
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/api/proxy/disable') {
+      statusCode = 200;
+      sendJson(response, 200, await disableProxy());
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/api/proxy/renew-certs') {
+      await renewCertificates();
+      statusCode = 200;
+      sendJson(response, 200, { ok: true });
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/api/proxy/refresh') {
+      const instances = await listInstances();
+      await refreshProxyConfig(instances);
+      statusCode = 200;
+      sendJson(response, 200, { ok: true });
       return;
     }
 

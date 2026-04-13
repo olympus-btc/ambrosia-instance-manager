@@ -60,6 +60,37 @@
       </section>
 
       <section class="card">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Reverse proxy</p>
+            <h2>HTTPS / Nginx</h2>
+          </div>
+          <div id="proxy-status-badges"></div>
+        </div>
+        <div id="proxy-content">
+          <form id="proxy-form" class="proxy-form">
+            <div class="proxy-fields">
+              <div class="field-group">
+                <label for="proxy-domain">Base domain</label>
+                <input id="proxy-domain" name="baseDomain" type="text" placeholder="ambrosia.example.com" />
+              </div>
+              <div class="field-group">
+                <label for="proxy-email">Let's Encrypt email</label>
+                <input id="proxy-email" name="email" type="email" placeholder="admin@example.com" />
+              </div>
+            </div>
+            <p class="proxy-hint">Set up a wildcard DNS record (<code>*.ambrosia.example.com</code>) pointing to this server's IP before configuring. Requires port 80/443 open and public IP.</p>
+            <div class="proxy-actions">
+              <button type="submit" id="proxy-save-button">Save and obtain certificate</button>
+              <button type="button" id="proxy-refresh-button" class="secondary">Refresh Nginx</button>
+              <button type="button" id="proxy-renew-button" class="secondary">Renew certificates</button>
+            </div>
+          </form>
+          <p id="proxy-feedback" class="feedback" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <section class="card">
         <div id="job-panel" class="job-panel" hidden>
           <div class="job-topline">
             <div>

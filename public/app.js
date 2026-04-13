@@ -27,6 +27,13 @@ const diagnosticsContent = document.querySelector("#diagnostics-content");
 const diagnosticsServicesBar = document.querySelector("#diagnostics-services-bar");
 const diagnosticsRefreshBtn = document.querySelector("#diagnostics-refresh");
 const diagnosticsAutorefreshBtn = document.querySelector("#diagnostics-autorefresh");
+const proxyForm = document.querySelector("#proxy-form");
+const proxyDomainInput = document.querySelector("#proxy-domain");
+const proxyEmailInput = document.querySelector("#proxy-email");
+const proxyFeedback = document.querySelector("#proxy-feedback");
+const proxyStatusBadges = document.querySelector("#proxy-status-badges");
+const proxyRefreshButton = document.querySelector("#proxy-refresh-button");
+const proxyRenewButton = document.querySelector("#proxy-renew-button");
 const THEME_STORAGE_KEY = "ambrosia-admin-theme";
 let instancesCache = [];
 let jobsCache = [];
@@ -178,6 +185,9 @@ function renderInstanceCard(instance) {
   const switchLabel = nextChain === "mainnet" ? "Mainnet" : "Testnet";
   const liquidityLabel = instance.phoenixAutoLiquidityOff ? "Auto liquidity" : "Manual liquidity";
   const liquidityNext = instance.phoenixAutoLiquidityOff ? false : true;
+  const displayUrl = instance.proxyFrontendUrl || instance.frontendUrl;
+  const displayApiUrl = instance.proxyApiUrl || instance.apiUrl;
+  const proxyBadge = instance.proxyFrontendUrl ? '<span class="badge badge-good">https</span>' : "";
 
   const jobMeta = activeJob
     ? `<div class="instance-card-progress">
@@ -197,18 +207,19 @@ function renderInstanceCard(instance) {
           ${statusBadge(status)}
           ${statusBadge(instance.phoenixChain || "mainnet")}
           ${statusBadge(instance.phoenixAutoLiquidityOff ? "manual liquidity" : "auto liquidity")}
+          ${proxyBadge}
         </div>
       </div>
 
       ${jobMeta}
 
       <div class="instance-card-urls">
-        <a href="${escapeHtml(instance.frontendUrl)}" target="_blank" rel="noreferrer" class="instance-url instance-url-frontend">
+        <a href="${escapeHtml(displayUrl)}" target="_blank" rel="noreferrer" class="instance-url instance-url-frontend">
           <span class="instance-url-label">Frontend</span>
-          <span class="instance-url-value">${escapeHtml(instance.frontendUrl)}</span>
+          <span class="instance-url-value">${escapeHtml(displayUrl)}</span>
         </a>
         <div class="instance-url-group">
-          <span class="instance-url-item"><span class="instance-url-label">API</span> <code>${escapeHtml(instance.apiUrl)}</code></span>
+          <span class="instance-url-item"><span class="instance-url-label">API</span> <code>${escapeHtml(displayApiUrl)}</code></span>
           <span class="instance-url-item"><span class="instance-url-label">Phoenixd</span> <code>${escapeHtml(instance.phoenixUrl)}</code></span>
         </div>
       </div>
@@ -217,7 +228,7 @@ function renderInstanceCard(instance) {
         <div class="action-group action-group-primary">
           <button data-action="open" data-id="${escapeHtml(instance.id)}" ${disabled}>Open</button>
           <button data-action="diagnostics" data-id="${escapeHtml(instance.id)}" class="secondary" ${disabled}>Logs</button>
-          <button data-action="qr" data-id="${escapeHtml(instance.id)}" data-url="${escapeHtml(instance.frontendUrl)}" data-name="${escapeHtml(instance.name)}" class="secondary" ${disabled}>QR</button>
+          <button data-action="qr" data-id="${escapeHtml(instance.id)}" data-url="${escapeHtml(displayUrl)}" data-name="${escapeHtml(instance.name)}" class="secondary" ${disabled}>QR</button>
           <button data-action="copy-local" data-id="${escapeHtml(instance.id)}" data-url="${escapeHtml(instance.localFrontendUrl)}" class="secondary" ${disabled}>Copy localhost</button>
         </div>
         <div class="action-group action-group-secondary">
@@ -637,7 +648,91 @@ themeToggle?.addEventListener("click", () => {
 
 applyTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
 
-Promise.all([fetchInstances(), fetchJobs()])
+function setProxyFeedback(message, tone = "neutral") {
+  if (!proxyFeedback) return;
+  proxyFeedback.textContent = message;
+  proxyFeedback.dataset.tone = tone;
+}
+
+async function loadProxyStatus() {
+  try {
+    const response = await fetch("/api/proxy");
+    const proxy = await response.json();
+    if (!response.ok) return;
+
+    if (proxyStatusBadges) {
+      const badges = [];
+      if (proxy.enabled) badges.push('<span class="badge badge-good">HTTPS enabled</span>');
+      else badges.push('<span class="badge badge-muted">HTTPS disabled</span>');
+      if (proxy.running) badges.push('<span class="badge badge-good">Nginx running</span>');
+      else badges.push('<span class="badge badge-muted">Nginx stopped</span>');
+      if (proxy.baseDomain) badges.push(`<span class="badge badge-muted">${escapeHtml(proxy.baseDomain)}</span>`);
+      proxyStatusBadges.innerHTML = badges.join("");
+    }
+
+    if (proxyDomainInput && proxy.baseDomain) proxyDomainInput.value = proxy.baseDomain;
+    if (proxyEmailInput && proxy.email) proxyEmailInput.value = proxy.email;
+  } catch { /* ignore */ }
+}
+
+if (proxyForm) {
+  proxyForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const baseDomain = proxyDomainInput?.value?.trim();
+    const email = proxyEmailInput?.value?.trim();
+
+    if (!baseDomain || !email) {
+      setProxyFeedback("Domain and email are required", "bad");
+      return;
+    }
+
+    try {
+      setProxyFeedback("Configuring proxy and requesting certificate...", "neutral");
+      const response = await fetch("/api/proxy/configure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ baseDomain, email }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Configuration failed");
+      setProxyFeedback("Proxy configured and certificate obtained", "good");
+      await Promise.all([loadProxyStatus(), fetchInstances()]);
+    } catch (error) {
+      setProxyFeedback(error.message, "bad");
+    }
+  });
+}
+
+if (proxyRefreshButton) {
+  proxyRefreshButton.addEventListener("click", async () => {
+    try {
+      setProxyFeedback("Refreshing proxy configuration...", "neutral");
+      const response = await fetch("/api/proxy/refresh", { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Refresh failed");
+      setProxyFeedback("Proxy configuration refreshed", "good");
+      await fetchInstances();
+    } catch (error) {
+      setProxyFeedback(error.message, "bad");
+    }
+  });
+}
+
+if (proxyRenewButton) {
+  proxyRenewButton.addEventListener("click", async () => {
+    try {
+      setProxyFeedback("Renewing SSL certificates...", "neutral");
+      const response = await fetch("/api/proxy/renew-certs", { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Renewal failed");
+      setProxyFeedback("Certificates renewed successfully", "good");
+    } catch (error) {
+      setProxyFeedback(error.message, "bad");
+    }
+  });
+}
+
+Promise.all([fetchInstances(), fetchJobs(), loadProxyStatus()])
   .then(() => {
     if (getActiveJobs().length > 0) {
       ensureJobsPolling();
