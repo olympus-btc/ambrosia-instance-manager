@@ -25,6 +25,46 @@ vi.mock('../src/instances.mjs', () => ({
   toggleInstanceAutoLiquidity: vi.fn(async () => ({ id: 'test', status: 'running' })),
 }));
 
+vi.mock('../src/proxy.mjs', () => ({
+  addInstanceToProxy: vi.fn(),
+  configureProxy: vi.fn(async () => ({ baseDomain: 'example.com', email: 'admin@example.com', enabled: true })),
+  disableProxy: vi.fn(async () => ({ enabled: false })),
+  enableProxy: vi.fn(async () => ({ enabled: true })),
+  getInstanceProxyUrls: vi.fn(async () => null),
+  getProxyStatus: vi.fn(async () => ({ enabled: false, running: false, baseDomain: null, email: null })),
+  refreshProxyConfig: vi.fn(async () => {}),
+  removeInstanceFromProxy: vi.fn(),
+  renewCertificates: vi.fn(async () => {}),
+}));
+
+vi.mock('../src/ngrok.mjs', () => ({
+  addInstanceTunnels: vi.fn(),
+  configureNgrok: vi.fn(async () => ({ enabled: true })),
+  disableNgrok: vi.fn(async () => ({ enabled: false })),
+  enableNgrok: vi.fn(async () => ({ enabled: true })),
+  getInstanceNgrokUrls: vi.fn(async () => null),
+  getNgrokStatus: vi.fn(async () => ({ enabled: false, running: false, installed: true })),
+  removeInstanceTunnels: vi.fn(),
+}));
+
+vi.mock('../src/cloudflare.mjs', () => ({
+  addInstanceToCloudflare: vi.fn(),
+  configureCloudflare: vi.fn(async () => ({ enabled: true, tunnelName: 'ambrosiapay' })),
+  disableCloudflare: vi.fn(async () => ({ enabled: false })),
+  enableCloudflare: vi.fn(async () => ({ enabled: true, domain: 'vidarte.site' })),
+  getCloudflareStatus: vi.fn(async () => ({
+    enabled: true,
+    installed: true,
+    running: true,
+    tunnelToken: null,
+    domain: 'vidarte.site',
+    tunnelName: 'ambrosiapay',
+  })),
+  getInstanceCloudflareUrls: vi.fn(async () => null),
+  removeInstanceFromCloudflare: vi.fn(),
+  setCloudflareDomain: vi.fn(async ({ domain }) => ({ domain })),
+}));
+
 let baseUrl;
 let server;
 
@@ -73,6 +113,24 @@ describe('API endpoints', () => {
       const res = await api('/api/jobs');
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body.jobs)).toBe(true);
+    });
+  });
+
+  describe('GET /api/cloudflare', () => {
+    it('returns Cloudflare status', async () => {
+      const res = await api('/api/cloudflare');
+      expect(res.status).toBe(200);
+      expect(res.body.enabled).toBe(true);
+      expect(res.body.domain).toBe('vidarte.site');
+    });
+  });
+
+  describe('POST /api/cloudflare/enable', () => {
+    it('enables Cloudflare mode', async () => {
+      const res = await api('/api/cloudflare/enable', { method: 'POST' });
+      expect(res.status).toBe(200);
+      expect(res.body.enabled).toBe(true);
+      expect(res.body.domain).toBe('vidarte.site');
     });
   });
 
