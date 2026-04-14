@@ -1,5 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
-import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -73,7 +73,7 @@ async function isRunning() {
   if (tunnelProcess && !tunnelProcess.killed) return true;
 
   try {
-    const { stdout } = await runCommand('pgrep', ['-f', 'cloudflared tunnel']);
+    const { stdout } = await runCommand('pgrep', ['-f', 'cloudflared']);
     return Boolean(stdout.trim());
   } catch {
     return false;
@@ -169,7 +169,7 @@ async function stopTunnel() {
   }
 
   try {
-    await runCommand('pkill', ['-f', 'cloudflared tunnel']);
+    await runCommand('pkill', ['-f', 'cloudflared']);
   } catch { /* ignore */ }
 }
 
@@ -229,13 +229,33 @@ export async function configureCloudflare({ tunnelToken }) {
 
 export async function enableCloudflare(instances) {
   const config = await readConfig();
-  if (!config.tunnelToken) {
-    throw createHttpError(400, 'Tunnel token must be configured first');
+  if (!config.domain) {
+    throw createHttpError(400, 'Domain must be configured first');
   }
+
+  const installed = await isInstalled();
+  if (!installed) {
+    throw createHttpError(400, 'cloudflared is not installed. Install it first on this machine.');
+  }
+
+  const running = await isRunning();
+  if (!config.tunnelToken && !running) {
+    throw createHttpError(400, 'Tunnel token must be configured first, or cloudflared must already be running');
+  }
+
   config.enabled = true;
   await writeConfig(config);
 
-  await startTunnel();
+  try {
+    const { configureCloudflareProxy } = await import('./proxy.mjs');
+    await configureCloudflareProxy({ baseDomain: config.domain }, instances);
+  } catch (error) {
+    throw createHttpError(error.statusCode || 500, error.message || 'Failed to configure local proxy for Cloudflare');
+  }
+
+  if (!running) {
+    await startTunnel();
+  }
   return config;
 }
 
@@ -249,23 +269,23 @@ export async function disableCloudflare() {
 
 export async function getInstanceCloudflareUrls(instanceId) {
   const config = await readConfig();
-  if (!config.enabled || !config.tunnelToken || !config.domain) return null;
+  if (!config.enabled || !config.domain) return null;
 
   const running = await isRunning();
   if (!running) return null;
 
   return {
     frontendUrl: `https://${instanceId}.${config.domain}`,
-    apiUrl: `https://api-${instanceId}.${config.domain}`,
+    apiUrl: `https://${instanceId}.${config.domain}/api`,
   };
 }
 
-export async function addInstanceToCloudflare(instance, instances) {
+export async function addInstanceToCloudflare(_instance, _instances) {
   const config = await readConfig();
   if (!config.enabled || !config.tunnelToken) return;
 }
 
-export async function removeInstanceFromCloudflare(instanceId, instances) {
+export async function removeInstanceFromCloudflare(_instanceId, _instances) {
   const config = await readConfig();
   if (!config.enabled || !config.tunnelToken) return;
 }
@@ -278,5 +298,14 @@ export async function setCloudflareDomain({ domain }) {
   const config = await readConfig();
   config.domain = domain.trim().toLowerCase();
   await writeConfig(config);
+
+  if (config.enabled && config.tunnelToken) {
+    try {
+      const { listInstances } = await import('./instances.mjs');
+      const { configureCloudflareProxy } = await import('./proxy.mjs');
+      await configureCloudflareProxy({ baseDomain: config.domain }, await listInstances());
+    } catch { /* ignore until Cloudflare mode is enabled */ }
+  }
+
   return config;
 }

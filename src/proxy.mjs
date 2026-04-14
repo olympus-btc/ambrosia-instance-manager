@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -67,13 +67,31 @@ async function runDockerCompose(args, options = {}) {
 async function readProxyConfig() {
   try {
     const content = await readFile(getProxyConfigPath(), 'utf8');
-    return JSON.parse(content);
+    const parsed = JSON.parse(content);
+    return {
+      baseDomain: null,
+      email: null,
+      enabled: false,
+      mode: 'public',
+      tlsMode: 'letsencrypt',
+      bindAddress: '0.0.0.0',
+      httpPort: 80,
+      httpsPort: 443,
+      ...parsed,
+    };
   } catch {
-    return { baseDomain: null, email: null, enabled: false };
+    return {
+      baseDomain: null,
+      email: null,
+      enabled: false,
+      mode: 'public',
+      tlsMode: 'letsencrypt',
+      bindAddress: '0.0.0.0',
+      httpPort: 80,
+      httpsPort: 443,
+    };
   }
 }
-
-
 
 async function writeProxyConfig(config) {
   await mkdir(path.dirname(getProxyConfigPath()), { recursive: true });
@@ -97,9 +115,9 @@ async function generateInstanceConf(instance) {
   const config = await readProxyConfig();
   const domain = config.baseDomain || 'localhost';
   const clientDomain = `${instance.id}.${domain}`;
-  const apiDomain = `api-${instance.id}.${domain}`;
+  const useTls = config.enabled && config.tlsMode === 'letsencrypt';
 
-  const sslBlock = config.enabled ? `
+  const sslBlock = useTls ? `
     listen 443 ssl;
     ssl_certificate /etc/letsencrypt/live/${domain}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/${domain}/privkey.pem;
@@ -108,10 +126,10 @@ async function generateInstanceConf(instance) {
     ssl_prefer_server_ciphers on;` : `
     listen 80;`;
 
-  const httpRedirect = config.enabled ? `
+  const httpRedirect = useTls ? `
 server {
     listen 80;
-    server_name ${clientDomain} ${apiDomain};
+    server_name ${clientDomain};
     location /.well-known/acme-challenge/ { root /var/www/certbot; }
     location / { return 301 https://$host$request_uri; }
 }` : '';
@@ -120,6 +138,45 @@ server {
 server {
     ${sslBlock}
     server_name ${clientDomain};
+
+    location = /api {
+        proxy_pass http://${instance.projectName}-ambrosia-1:9154/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+    }
+
+    location ^~ /api/ {
+        rewrite ^/api/(.*)$ /$1 break;
+        proxy_pass http://${instance.projectName}-ambrosia-1:9154;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+    }
+
+    location ^~ /uploads/ {
+        proxy_pass http://${instance.projectName}-ambrosia-1:9154;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+    }
+
+    location /ws/payments {
+        proxy_pass http://${instance.projectName}-ambrosia-1:9154;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
 
     location / {
         proxy_pass http://${instance.projectName}-ambrosia-client-1:3000;
@@ -130,20 +187,6 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
-    }
-}
-
-server {
-    ${sslBlock}
-    server_name ${apiDomain};
-
-    location / {
-        proxy_pass http://${instance.projectName}-ambrosia-1:9154;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_http_version 1.1;
     }
 }
 `;
@@ -159,9 +202,7 @@ async function rebuildMaps(instances) {
 
   for (const instance of instances) {
     const clientDomain = `${instance.id}.${domain}`;
-    const apiDomain = `api-${instance.id}.${domain}`;
     clientLines.push(`~^${clientDomain.replace(/\./g, '\\.')}$ http://${instance.projectName}-ambrosia-client-1:3000;`);
-    apiLines.push(`~^${apiDomain.replace(/\./g, '\\.')}$ http://${instance.projectName}-ambrosia-1:9154;`);
   }
 
   await writeFile(upstreamMapPath, `${clientLines.join('\n')}\n`);
@@ -173,6 +214,28 @@ async function writeInstanceConf(instance) {
   const confPath = path.join(instancesConfDir, `${instance.id}.conf`);
   const content = await generateInstanceConf(instance);
   await writeFile(confPath, content);
+}
+
+function getPublishedInstances(instances) {
+  return instances.filter((instance) => instance.status === 'running');
+}
+
+async function syncInstanceConfFiles(instances) {
+  await mkdir(instancesConfDir, { recursive: true });
+  const expected = new Set(instances.map((instance) => `${instance.id}.conf`));
+
+  let entries = [];
+  try {
+    entries = await readdir(instancesConfDir);
+  } catch {
+    return;
+  }
+
+  for (const entry of entries) {
+    if (!entry.endsWith('.conf')) continue;
+    if (expected.has(entry)) continue;
+    await rm(path.join(instancesConfDir, entry), { force: true });
+  }
 }
 
 async function removeInstanceConf(instanceId) {
@@ -208,12 +271,31 @@ async function obtainCertificate(domain, email) {
   }
 }
 
-async function startProxy() {
-  await runDockerCompose(['-f', proxyComposeFile, 'up', '-d'], { cwd: managerRoot });
+function buildProxyComposeEnv(config) {
+  const bindAddress = config.bindAddress === '127.0.0.1' ? '127.0.0.1' : '0.0.0.0';
+  const httpPort = Number.parseInt(`${config.httpPort || 80}`, 10) || 80;
+  const httpsPort = Number.parseInt(`${config.httpsPort || 443}`, 10) || 443;
+  const httpBind = bindAddress === '127.0.0.1' ? `${bindAddress}:${httpPort}` : `${httpPort}`;
+  const httpsBind = bindAddress === '127.0.0.1' ? `${bindAddress}:${httpsPort}` : `${httpsPort}`;
+  return {
+    ...process.env,
+    PROXY_HTTP_BIND: httpBind,
+    PROXY_HTTPS_BIND: httpsBind,
+  };
 }
 
-async function stopProxy() {
-  await runDockerCompose(['-f', proxyComposeFile, 'down'], { cwd: managerRoot });
+async function startProxy(config) {
+  await runDockerCompose(['-f', proxyComposeFile, 'up', '-d'], {
+    cwd: managerRoot,
+    env: buildProxyComposeEnv(config),
+  });
+}
+
+async function stopProxy(config) {
+  await runDockerCompose(['-f', proxyComposeFile, 'down'], {
+    cwd: managerRoot,
+    env: buildProxyComposeEnv(config),
+  });
 }
 
 async function connectInstanceToProxy(instance) {
@@ -259,10 +341,15 @@ export async function configureProxy({ baseDomain, email }) {
     baseDomain: normalizedDomain,
     email: normalizedEmail,
     enabled: true,
+    mode: 'public',
+    tlsMode: 'letsencrypt',
+    bindAddress: '0.0.0.0',
+    httpPort: 80,
+    httpsPort: 443,
   };
 
   await writeProxyConfig(config);
-  await startProxy();
+  await startProxy(config);
 
   try {
     await obtainCertificate(normalizedDomain, normalizedEmail);
@@ -277,12 +364,15 @@ export async function configureProxy({ baseDomain, email }) {
 
 export async function enableProxy() {
   const config = await readProxyConfig();
-  if (!config.baseDomain || !config.email) {
+  if (!config.baseDomain) {
+    throw createHttpError(400, 'Proxy must be configured with a domain and email first');
+  }
+  if (config.tlsMode === 'letsencrypt' && !config.email) {
     throw createHttpError(400, 'Proxy must be configured with a domain and email first');
   }
   config.enabled = true;
   await writeProxyConfig(config);
-  await startProxy();
+  await startProxy(config);
   return config;
 }
 
@@ -290,7 +380,7 @@ export async function disableProxy() {
   const config = await readProxyConfig();
   config.enabled = false;
   await writeProxyConfig(config);
-  await stopProxy();
+  await stopProxy(config);
   return config;
 }
 
@@ -300,7 +390,7 @@ export async function addInstanceToProxy(instance, instances) {
 
   await connectInstanceToProxy(instance);
   await writeInstanceConf(instance);
-  await rebuildMaps(instances);
+  await rebuildMaps(getPublishedInstances(instances));
 
   const running = await isProxyRunning();
   if (running) {
@@ -318,7 +408,9 @@ export async function removeInstanceFromProxy(instanceId, instances) {
   }
 
   await removeInstanceConf(instanceId);
-  await rebuildMaps(instances.filter((i) => i.id !== instanceId));
+  const remainingInstances = getPublishedInstances(instances).filter((i) => i.id !== instanceId);
+  await rebuildMaps(remainingInstances);
+  await syncInstanceConfFiles(remainingInstances);
 
   const running = await isProxyRunning();
   if (running) {
@@ -330,12 +422,15 @@ export async function refreshProxyConfig(instances) {
   const config = await readProxyConfig();
   if (!config.enabled || !config.baseDomain) return;
 
-  for (const instance of instances) {
+  const publishedInstances = getPublishedInstances(instances);
+
+  for (const instance of publishedInstances) {
     await connectInstanceToProxy(instance);
     await writeInstanceConf(instance);
   }
 
-  await rebuildMaps(instances);
+  await rebuildMaps(publishedInstances);
+  await syncInstanceConfFiles(publishedInstances);
 
   const running = await isProxyRunning();
   if (running) {
@@ -344,6 +439,10 @@ export async function refreshProxyConfig(instances) {
 }
 
 export async function renewCertificates() {
+  const config = await readProxyConfig();
+  if (config.tlsMode !== 'letsencrypt') {
+    throw createHttpError(400, 'Certificate renewal is only available in public HTTPS mode');
+  }
   try {
     await runCommand('docker', [
       'compose', '-f', proxyComposeFile,
@@ -360,6 +459,28 @@ export async function getInstanceProxyUrls(instance) {
   const domain = config.baseDomain;
   return {
     frontendUrl: `https://${instance.id}.${domain}`,
-    apiUrl: `https://api-${instance.id}.${domain}`,
+    apiUrl: `https://${instance.id}.${domain}/api`,
   };
+}
+
+export async function configureCloudflareProxy({ baseDomain }, instances = []) {
+  if (!baseDomain || !baseDomain.trim()) {
+    throw createHttpError(400, 'Base domain is required');
+  }
+
+  const config = {
+    baseDomain: baseDomain.trim().toLowerCase(),
+    email: null,
+    enabled: true,
+    mode: 'cloudflare',
+    tlsMode: 'off',
+    bindAddress: '127.0.0.1',
+    httpPort: 8080,
+    httpsPort: 8443,
+  };
+
+  await writeProxyConfig(config);
+  await startProxy(config);
+  await refreshProxyConfig(instances);
+  return config;
 }
