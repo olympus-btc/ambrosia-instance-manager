@@ -13,6 +13,7 @@ const composeFile = path.join(managerRoot, 'docker-compose.instance.yml');
 const defaultAmbrosiaSourceDir = path.join(os.homedir(), 'code', 'ambrosia');
 const dataRoot = process.env.INSTANCE_DATA_DIR || path.join(managerRoot, '.ambrosia-instances');
 const registryPath = path.join(dataRoot, 'instances.json');
+const proxyConfigPath = path.join(dataRoot, 'proxy-config.json');
 
 const PORT_STARTS = {
   apiPort: 9155,
@@ -273,10 +274,29 @@ async function writeEnvFile(instance) {
   const sourceDir = await ensureAmbrosiaSourceDir();
   const phoenixChain = resolvePhoenixChain(instance.phoenixChain);
   const phoenixAutoLiquidityOff = resolvePhoenixAutoLiquidityOff(instance.phoenixAutoLiquidityOff);
+  let publicApiUrl = 'http://ambrosia:9154';
+  let publicWsUrl = '';
+  let publicApiPort = `${instance.apiPort}`;
+
+  try {
+    const proxyConfig = JSON.parse(await readFile(proxyConfigPath, 'utf8'));
+    if (proxyConfig.enabled && proxyConfig.baseDomain) {
+      const publicHost = `${instance.id}.${proxyConfig.baseDomain}`;
+      const publicScheme = proxyConfig.tlsMode === 'letsencrypt' || proxyConfig.mode === 'cloudflare' ? 'https' : 'http';
+      const wsScheme = publicScheme === 'https' ? 'wss' : 'ws';
+      publicApiUrl = 'http://ambrosia:9154';
+      publicWsUrl = `${wsScheme}://${publicHost}/ws/payments`;
+      publicApiPort = '443';
+    }
+  } catch { /* proxy not configured */ }
+
   const envLines = [
     `INSTANCE_ID=${instance.id}`,
     `CLIENT_PORT=${instance.clientPort}`,
     `API_PORT=${instance.apiPort}`,
+    `NEXT_PUBLIC_API_URL=${publicApiUrl}`,
+    `NEXT_PUBLIC_WS_URL=${publicWsUrl}`,
+    `NEXT_PUBLIC_PORT_API=${publicApiPort}`,
     `PHOENIX_PORT=${instance.phoenixPort}`,
     `PHOENIX_CHAIN=${phoenixChain}`,
     `PHOENIX_AUTO_LIQUIDITY=${phoenixAutoLiquidityOff ? 'off' : ''}`,
@@ -508,6 +528,12 @@ export async function startInstance(instanceId, options = {}) {
   await runCompose(instance, ['start']);
   instance.status = 'running';
   await writeRegistry(registry);
+
+  try {
+    const { addInstanceToProxy } = await import('./proxy.mjs');
+    await addInstanceToProxy(instance, registry.instances);
+  } catch { /* proxy not configured, skip */ }
+
   reportProgress({ step: 'completed', message: 'Instance is running', progress: 100, instanceId });
   return decorateInstance(instance, 'running');
 }
@@ -520,6 +546,12 @@ export async function stopInstance(instanceId, options = {}) {
   await runCompose(instance, ['stop']);
   instance.status = 'stopped';
   await writeRegistry(registry);
+
+  try {
+    const { removeInstanceFromProxy } = await import('./proxy.mjs');
+    await removeInstanceFromProxy(instanceId, registry.instances);
+  } catch { /* proxy not configured, skip */ }
+
   reportProgress({ step: 'completed', message: 'Instance is stopped', progress: 100, instanceId });
   return decorateInstance(instance, 'stopped');
 }
@@ -540,6 +572,12 @@ export async function rebuildInstance(instanceId, options = {}) {
   await runCompose(instance, ['up', '-d', '--build', '--force-recreate']);
   instance.status = 'running';
   await writeRegistry(registry);
+
+  try {
+    const { addInstanceToProxy } = await import('./proxy.mjs');
+    await addInstanceToProxy(instance, registry.instances);
+  } catch { /* proxy not configured, skip */ }
+
   reportProgress({ step: 'completed', message: 'Instance rebuilt successfully', progress: 100, instanceId });
   return decorateInstance(instance, 'running');
 }
@@ -577,6 +615,12 @@ export async function toggleInstanceAutoLiquidity(instanceId, enabled, options =
 
   instance.status = 'running';
   await writeRegistry(registry);
+
+  try {
+    const { addInstanceToProxy } = await import('./proxy.mjs');
+    await addInstanceToProxy(instance, registry.instances);
+  } catch { /* proxy not configured, skip */ }
+
   reportProgress({
     step: 'completed',
     message: `Instance switched to ${nextValue ? 'manual' : 'auto'} liquidity`,
@@ -618,6 +662,12 @@ export async function switchInstancePhoenixChain(instanceId, phoenixChain, optio
 
   instance.status = 'running';
   await writeRegistry(registry);
+
+  try {
+    const { addInstanceToProxy } = await import('./proxy.mjs');
+    await addInstanceToProxy(instance, registry.instances);
+  } catch { /* proxy not configured, skip */ }
+
   reportProgress({
     step: 'completed',
     message: `Instance switched to ${nextChain}`,
