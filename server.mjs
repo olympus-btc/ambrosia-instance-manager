@@ -7,6 +7,13 @@ import { fileURLToPath } from 'node:url';
 import qrcode from 'qr.js';
 
 import {
+  configureCloudflare,
+  disableCloudflare,
+  enableCloudflare,
+  getCloudflareStatus,
+  setCloudflareDomain,
+} from './src/cloudflare.mjs';
+import {
   createInstance,
   deleteInstance,
   getInstanceDiagnostics,
@@ -17,39 +24,20 @@ import {
   switchInstancePhoenixChain,
   toggleInstanceAutoLiquidity,
 } from './src/instances.mjs';
-
 import {
-  addInstanceToProxy,
-  configureProxy,
-  disableProxy,
-  enableProxy,
-  getInstanceProxyUrls,
-  getProxyStatus,
-  refreshProxyConfig,
-  removeInstanceFromProxy,
-  renewCertificates,
-} from './src/proxy.mjs';
-
-import {
-  addInstanceTunnels,
   configureNgrok,
   disableNgrok,
   enableNgrok,
-  getInstanceNgrokUrls,
   getNgrokStatus,
-  removeInstanceTunnels,
 } from './src/ngrok.mjs';
-
 import {
-  addInstanceToCloudflare,
-  configureCloudflare,
-  disableCloudflare,
-  enableCloudflare,
-  getCloudflareStatus,
-  getInstanceCloudflareUrls,
-  removeInstanceFromCloudflare,
-  setCloudflareDomain,
-} from './src/cloudflare.mjs';
+  configureProxy,
+  disableProxy,
+  enableProxy,
+  getProxyStatus,
+  refreshProxyConfig,
+  renewCertificates,
+} from './src/proxy.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = __dirname;

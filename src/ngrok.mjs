@@ -1,5 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
-import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -341,6 +341,6 @@ export async function getInstanceNgrokUrls(instanceId) {
 
   return {
     frontendUrl: clientUrl,
-    apiUrl: apiUrl,
+    apiUrl,
   };
 }
