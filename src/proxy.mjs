@@ -148,6 +148,19 @@ server {
         proxy_http_version 1.1;
     }
 
+    location = /api/ws-payments {
+        proxy_pass http://${instance.projectName}-ambrosia-client-1:3000/api/ws-payments;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        proxy_set_header Connection '';
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 86400s;
+    }
+
     location ^~ /api/ {
         rewrite ^/api/(.*)$ /$1 break;
         proxy_pass http://${instance.projectName}-ambrosia-1:9154;
@@ -165,17 +178,6 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_http_version 1.1;
-    }
-
-    location /ws/payments {
-        proxy_pass http://${instance.projectName}-ambrosia-1:9154;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
     }
 
     location / {

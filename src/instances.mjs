@@ -13,7 +13,6 @@ const composeFile = path.join(managerRoot, 'docker-compose.instance.yml');
 const defaultAmbrosiaSourceDir = path.join(os.homedir(), 'code', 'ambrosia');
 const dataRoot = process.env.INSTANCE_DATA_DIR || path.join(managerRoot, '.ambrosia-instances');
 const registryPath = path.join(dataRoot, 'instances.json');
-const proxyConfigPath = path.join(dataRoot, 'proxy-config.json');
 
 const PORT_STARTS = {
   apiPort: 9155,
@@ -274,29 +273,13 @@ async function writeEnvFile(instance) {
   const sourceDir = await ensureAmbrosiaSourceDir();
   const phoenixChain = resolvePhoenixChain(instance.phoenixChain);
   const phoenixAutoLiquidityOff = resolvePhoenixAutoLiquidityOff(instance.phoenixAutoLiquidityOff);
-  let publicApiUrl = 'http://ambrosia:9154';
-  let publicWsUrl = '';
-  let publicApiPort = `${instance.apiPort}`;
-
-  try {
-    const proxyConfig = JSON.parse(await readFile(proxyConfigPath, 'utf8'));
-    if (proxyConfig.enabled && proxyConfig.baseDomain) {
-      const publicHost = `${instance.id}.${proxyConfig.baseDomain}`;
-      const publicScheme = proxyConfig.tlsMode === 'letsencrypt' || proxyConfig.mode === 'cloudflare' ? 'https' : 'http';
-      const wsScheme = publicScheme === 'https' ? 'wss' : 'ws';
-      publicApiUrl = 'http://ambrosia:9154';
-      publicWsUrl = `${wsScheme}://${publicHost}/ws/payments`;
-      publicApiPort = '443';
-    }
-  } catch { /* proxy not configured */ }
+  const publicApiUrl = 'http://ambrosia:9154';
 
   const envLines = [
     `INSTANCE_ID=${instance.id}`,
     `CLIENT_PORT=${instance.clientPort}`,
     `API_PORT=${instance.apiPort}`,
     `NEXT_PUBLIC_API_URL=${publicApiUrl}`,
-    `NEXT_PUBLIC_WS_URL=${publicWsUrl}`,
-    `NEXT_PUBLIC_PORT_API=${publicApiPort}`,
     `PHOENIX_PORT=${instance.phoenixPort}`,
     `PHOENIX_CHAIN=${phoenixChain}`,
     `PHOENIX_AUTO_LIQUIDITY=${phoenixAutoLiquidityOff ? 'off' : ''}`,
