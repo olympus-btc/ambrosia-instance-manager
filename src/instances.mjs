@@ -158,7 +158,7 @@ async function enhanceWithProxyUrls(instance) {
       instance.proxyFrontendUrl = proxyUrls.frontendUrl;
       instance.proxyApiUrl = proxyUrls.apiUrl;
     }
-  } catch { /* proxy not configured */ }
+  } catch { }
 
   try {
     const { getInstanceNgrokUrls } = await import('./ngrok.mjs');
@@ -167,7 +167,7 @@ async function enhanceWithProxyUrls(instance) {
       instance.proxyFrontendUrl = ngrokUrls.frontendUrl;
       instance.proxyApiUrl = ngrokUrls.apiUrl;
     }
-  } catch { /* ngrok not configured */ }
+  } catch { }
 
   try {
     const { getInstanceCloudflareUrls } = await import('./cloudflare.mjs');
@@ -176,7 +176,7 @@ async function enhanceWithProxyUrls(instance) {
       instance.proxyFrontendUrl = cfUrls.frontendUrl;
       instance.proxyApiUrl = cfUrls.apiUrl;
     }
-  } catch { /* cloudflare not configured */ }
+  } catch { }
 
   return instance;
 }
@@ -379,7 +379,7 @@ export async function getInstanceDiagnostics(instanceId) {
   try {
     const { stdout } = await runCompose(instance, ['ps', '--all', '--format', 'json']);
     services = parseComposeJson(stdout);
-  } catch { /* docker compose ps may fail if not running */ }
+  } catch { }
 
   const normalizedServices = await Promise.all(
     services.map(async (service) => {
@@ -488,17 +488,17 @@ export async function createInstance(payload, options = {}) {
     const { addInstanceToProxy } = await import('./proxy.mjs');
     const allInstances = registry.instances;
     await addInstanceToProxy(instance, allInstances);
-  } catch { /* proxy not configured, skip */ }
+  } catch { }
 
   try {
     const { addInstanceTunnels } = await import('./ngrok.mjs');
     await addInstanceTunnels(instance, registry.instances);
-  } catch { /* ngrok not configured, skip */ }
+  } catch { }
 
   try {
     const { addInstanceToCloudflare } = await import('./cloudflare.mjs');
     await addInstanceToCloudflare(instance, registry.instances);
-  } catch { /* cloudflare not configured, skip */ }
+  } catch { }
 
   return decorateInstance(instance, 'running');
 }
@@ -515,7 +515,7 @@ export async function startInstance(instanceId, options = {}) {
   try {
     const { addInstanceToProxy } = await import('./proxy.mjs');
     await addInstanceToProxy(instance, registry.instances);
-  } catch { /* proxy not configured, skip */ }
+  } catch { }
 
   reportProgress({ step: 'completed', message: 'Instance is running', progress: 100, instanceId });
   return decorateInstance(instance, 'running');
@@ -533,7 +533,7 @@ export async function stopInstance(instanceId, options = {}) {
   try {
     const { removeInstanceFromProxy } = await import('./proxy.mjs');
     await removeInstanceFromProxy(instanceId, registry.instances);
-  } catch { /* proxy not configured, skip */ }
+  } catch { }
 
   reportProgress({ step: 'completed', message: 'Instance is stopped', progress: 100, instanceId });
   return decorateInstance(instance, 'stopped');
@@ -559,7 +559,7 @@ export async function rebuildInstance(instanceId, options = {}) {
   try {
     const { addInstanceToProxy } = await import('./proxy.mjs');
     await addInstanceToProxy(instance, registry.instances);
-  } catch { /* proxy not configured, skip */ }
+  } catch { }
 
   reportProgress({ step: 'completed', message: 'Instance rebuilt successfully', progress: 100, instanceId });
   return decorateInstance(instance, 'running');
@@ -602,7 +602,7 @@ export async function toggleInstanceAutoLiquidity(instanceId, enabled, options =
   try {
     const { addInstanceToProxy } = await import('./proxy.mjs');
     await addInstanceToProxy(instance, registry.instances);
-  } catch { /* proxy not configured, skip */ }
+  } catch { }
 
   reportProgress({
     step: 'completed',
@@ -649,7 +649,7 @@ export async function switchInstancePhoenixChain(instanceId, phoenixChain, optio
   try {
     const { addInstanceToProxy } = await import('./proxy.mjs');
     await addInstanceToProxy(instance, registry.instances);
-  } catch { /* proxy not configured, skip */ }
+  } catch { }
 
   reportProgress({
     step: 'completed',
@@ -671,17 +671,17 @@ export async function deleteInstance(instanceId, options = {}) {
   try {
     const { removeInstanceFromProxy } = await import('./proxy.mjs');
     await removeInstanceFromProxy(instanceId, registry.instances);
-  } catch { /* proxy not configured, skip */ }
+  } catch { }
 
   try {
     const { removeInstanceTunnels } = await import('./ngrok.mjs');
     await removeInstanceTunnels(instanceId, registry.instances);
-  } catch { /* ngrok not configured, skip */ }
+  } catch { }
 
   try {
     const { removeInstanceFromCloudflare } = await import('./cloudflare.mjs');
     await removeInstanceFromCloudflare(instanceId, registry.instances);
-  } catch { /* cloudflare not configured, skip */ }
+  } catch { }
 
   reportProgress({ step: 'removing_containers', message: 'Removing containers and volumes', progress: 65, instanceId });
   await runCompose(instance, ['down', '-v']);

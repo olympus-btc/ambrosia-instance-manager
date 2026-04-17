@@ -202,7 +202,7 @@ async function removeInstanceConf(instanceId) {
   const confPath = path.join(instancesConfDir, `${instanceId}.conf`);
   try {
     await rm(confPath);
-  } catch { /* ignore */ }
+  } catch { }
 }
 
 async function reloadNginx() {
@@ -265,7 +265,7 @@ async function connectInstanceToProxy(instance) {
         'network', 'connect', PROXY_NETWORK,
         `${instance.projectName}-${service}`,
       ]);
-    } catch { /* already connected */ }
+    } catch { }
   }
 }
 
@@ -276,7 +276,7 @@ async function disconnectInstanceFromProxy(instance) {
         'network', 'disconnect', PROXY_NETWORK,
         `${instance.projectName}-${service}`,
       ]);
-    } catch { /* ignore */ }
+    } catch { }
   }
 }
 

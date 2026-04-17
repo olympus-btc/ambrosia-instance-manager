@@ -145,7 +145,7 @@ let ngrokProcess = null;
 
 async function startNgrok() {
   if (ngrokProcess) {
-    try { ngrokProcess.kill(); } catch { /* ignore */ }
+    try { ngrokProcess.kill(); } catch { }
     ngrokProcess = null;
   }
 
@@ -220,13 +220,13 @@ async function startNgrok() {
 
 async function stopNgrok() {
   if (ngrokProcess) {
-    try { ngrokProcess.kill('SIGTERM'); } catch { /* ignore */ }
+    try { ngrokProcess.kill('SIGTERM'); } catch { }
     ngrokProcess = null;
   }
 
   try {
     await runCommand('pkill', ['-f', 'ngrok start']);
-  } catch { /* ignore */ }
+  } catch { }
 }
 
 async function refreshTunnelConfig(instances) {

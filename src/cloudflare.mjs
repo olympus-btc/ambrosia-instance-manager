@@ -82,7 +82,7 @@ async function isRunning() {
 
 async function startTunnel() {
   if (tunnelProcess) {
-    try { tunnelProcess.kill(); } catch { /* ignore */ }
+    try { tunnelProcess.kill(); } catch { }
     tunnelProcess = null;
   }
 
@@ -164,13 +164,13 @@ async function startTunnel() {
 
 async function stopTunnel() {
   if (tunnelProcess) {
-    try { tunnelProcess.kill('SIGTERM'); } catch { /* ignore */ }
+    try { tunnelProcess.kill('SIGTERM'); } catch { }
     tunnelProcess = null;
   }
 
   try {
     await runCommand('pkill', ['-f', 'cloudflared']);
-  } catch { /* ignore */ }
+  } catch { }
 }
 
 export async function getCloudflareStatus() {
@@ -207,7 +207,7 @@ export async function configureCloudflare({ tunnelToken }) {
       env: { ...process.env, TUNNEL_TOKEN: token },
     });
     tunnelInfo = JSON.parse(stdout);
-  } catch { /* ignore, info may not be available */ }
+  } catch { }
 
   const credentialsPath = getCredentialsPath();
   try {
@@ -304,7 +304,7 @@ export async function setCloudflareDomain({ domain }) {
       const { listInstances } = await import('./instances.mjs');
       const { configureCloudflareProxy } = await import('./proxy.mjs');
       await configureCloudflareProxy({ baseDomain: config.domain }, await listInstances());
-    } catch { /* ignore until Cloudflare mode is enabled */ }
+    } catch { }
   }
 
   return config;
