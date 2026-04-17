@@ -13,8 +13,26 @@ const confDir = path.join(proxyDir, 'conf.d');
 const instancesConfDir = path.join(confDir, 'instances');
 const upstreamMapPath = path.join(confDir, 'upstream.map');
 const apiUpstreamMapPath = path.join(confDir, 'api-upstream.map');
+const templatesDir = path.join(proxyDir, 'templates');
+const instanceTemplatePath = path.join(templatesDir, 'instance.conf');
 
 const PROXY_NETWORK = 'ambrosia-proxy';
+
+let instanceTemplateCache = null;
+
+async function loadInstanceTemplate() {
+  if (instanceTemplateCache) return instanceTemplateCache;
+  instanceTemplateCache = await readFile(instanceTemplatePath, 'utf8');
+  return instanceTemplateCache;
+}
+
+function renderTemplate(template, vars) {
+  let out = template;
+  for (const [key, value] of Object.entries(vars)) {
+    out = out.replaceAll(`{{${key}}}`, value);
+  }
+  return out;
+}
 
 function getDataRoot() {
   return process.env.INSTANCE_DATA_DIR || path.join(managerRoot, '.ambrosia-instances');
@@ -114,84 +132,24 @@ async function isProxyRunning() {
 async function generateInstanceConf(instance) {
   const config = await readProxyConfig();
   const domain = config.baseDomain || 'localhost';
-  const clientDomain = `${instance.id}.${domain}`;
+  const serverName = `${instance.id}.${domain}`;
   const useTls = config.enabled && config.tlsMode === 'letsencrypt';
 
-  const sslBlock = useTls ? `
-    listen 443 ssl;
-    ssl_certificate /etc/letsencrypt/live/${domain}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/${domain}/privkey.pem;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-    ssl_prefer_server_ciphers on;` : `
-    listen 80;`;
+  const listenDirective = useTls
+    ? `listen 443 ssl;\n    ssl_certificate /etc/letsencrypt/live/${domain}/fullchain.pem;\n    ssl_certificate_key /etc/letsencrypt/live/${domain}/privkey.pem;\n    include /etc/nginx/conf.d/snippets/ssl-params.conf;`
+    : `listen 80;`;
 
-  const httpRedirect = useTls ? `
-server {
-    listen 80;
-    server_name ${clientDomain};
-    location /.well-known/acme-challenge/ { root /var/www/certbot; }
-    location / { return 301 https://$host$request_uri; }
-}` : '';
+  const httpRedirect = useTls
+    ? `server {\n    listen 80;\n    server_name ${serverName};\n    location /.well-known/acme-challenge/ { root /var/www/certbot; }\n    location / { return 301 https://$host$request_uri; }\n}\n`
+    : '';
 
-  return `${httpRedirect}
-server {
-    ${sslBlock}
-    server_name ${clientDomain};
-
-    location = /api {
-        proxy_pass http://${instance.projectName}-ambrosia-1:9154/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_http_version 1.1;
-    }
-
-    location = /api/ws-payments {
-        proxy_pass http://${instance.projectName}-ambrosia-client-1:3000/api/ws-payments;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_http_version 1.1;
-        proxy_set_header Connection '';
-        proxy_buffering off;
-        proxy_cache off;
-        proxy_read_timeout 86400s;
-    }
-
-    location ^~ /api/ {
-        rewrite ^/api/(.*)$ /$1 break;
-        proxy_pass http://${instance.projectName}-ambrosia-1:9154;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_http_version 1.1;
-    }
-
-    location ^~ /uploads/ {
-        proxy_pass http://${instance.projectName}-ambrosia-1:9154;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_http_version 1.1;
-    }
-
-    location / {
-        proxy_pass http://${instance.projectName}-ambrosia-client-1:3000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
-}
-`;
+  const template = await loadInstanceTemplate();
+  return renderTemplate(template, {
+    HTTP_REDIRECT: httpRedirect,
+    LISTEN_DIRECTIVE: listenDirective,
+    SERVER_NAME: serverName,
+    PROJECT_NAME: instance.projectName,
+  });
 }
 
 async function rebuildMaps(instances) {
