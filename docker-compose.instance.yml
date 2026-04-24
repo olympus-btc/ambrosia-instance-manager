@@ -39,7 +39,7 @@ services:
     build:
       context: ${AMBROSIA_CLIENT_CONTEXT}
       args:
-        NEXT_PUBLIC_PORT_API: ${API_PORT}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
     image: ambrosia-client
     restart: unless-stopped
     networks:
@@ -51,8 +51,7 @@ services:
     ports:
       - "${CLIENT_PORT}:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://ambrosia:9154
-      NEXT_PUBLIC_PORT_API: "${API_PORT}"
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
 
 volumes:
   phoenix_data:

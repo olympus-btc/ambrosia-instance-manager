@@ -72,6 +72,7 @@ const eslintConfig = [
         argsIgnorePattern: '^_',
         varsIgnorePattern: '^_',
       }],
+      'no-empty': ['error', { allowEmptyCatch: true }],
       'no-console': 'off',
       'prefer-const': 'error',
       'no-var': 'error',

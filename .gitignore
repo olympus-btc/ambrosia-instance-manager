@@ -1,3 +1,6 @@
 .ambrosia-instances/
 .DS_Store
 node_modules/
+proxy/conf.d/upstream.map
+proxy/conf.d/api-upstream.map
+proxy/conf.d/instances/

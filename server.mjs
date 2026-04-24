@@ -7,6 +7,13 @@ import { fileURLToPath } from 'node:url';
 import qrcode from 'qr.js';
 
 import {
+  configureCloudflare,
+  disableCloudflare,
+  enableCloudflare,
+  getCloudflareStatus,
+  setCloudflareDomain,
+} from './src/cloudflare.mjs';
+import {
   createInstance,
   deleteInstance,
   getInstanceDiagnostics,
@@ -17,6 +24,20 @@ import {
   switchInstancePhoenixChain,
   toggleInstanceAutoLiquidity,
 } from './src/instances.mjs';
+import {
+  configureNgrok,
+  disableNgrok,
+  enableNgrok,
+  getNgrokStatus,
+} from './src/ngrok.mjs';
+import {
+  configureProxy,
+  disableProxy,
+  enableProxy,
+  getProxyStatus,
+  refreshProxyConfig,
+  renewCertificates,
+} from './src/proxy.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = __dirname;
@@ -182,6 +203,105 @@ const server = createServer(async (request, response) => {
     if (method === 'GET' && url.pathname === '/api/instances') {
       statusCode = 200;
       sendJson(response, 200, { instances: await listInstances() });
+      return;
+    }
+
+    if (method === 'GET' && url.pathname === '/api/proxy') {
+      statusCode = 200;
+      sendJson(response, 200, await getProxyStatus());
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/api/proxy/configure') {
+      const body = await readJsonBody(request);
+      statusCode = 200;
+      sendJson(response, 200, await configureProxy(body));
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/api/proxy/enable') {
+      statusCode = 200;
+      sendJson(response, 200, await enableProxy());
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/api/proxy/disable') {
+      statusCode = 200;
+      sendJson(response, 200, await disableProxy());
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/api/proxy/renew-certs') {
+      await renewCertificates();
+      statusCode = 200;
+      sendJson(response, 200, { ok: true });
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/api/proxy/refresh') {
+      const instances = await listInstances();
+      await refreshProxyConfig(instances);
+      statusCode = 200;
+      sendJson(response, 200, { ok: true });
+      return;
+    }
+
+    if (method === 'GET' && url.pathname === '/api/ngrok') {
+      statusCode = 200;
+      sendJson(response, 200, await getNgrokStatus());
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/api/ngrok/configure') {
+      const body = await readJsonBody(request);
+      statusCode = 200;
+      sendJson(response, 200, await configureNgrok(body));
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/api/ngrok/enable') {
+      const instances = await listInstances();
+      statusCode = 200;
+      sendJson(response, 200, await enableNgrok(instances));
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/api/ngrok/disable') {
+      statusCode = 200;
+      sendJson(response, 200, await disableNgrok());
+      return;
+    }
+
+    if (method === 'GET' && url.pathname === '/api/cloudflare') {
+      statusCode = 200;
+      sendJson(response, 200, await getCloudflareStatus());
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/api/cloudflare/configure') {
+      const body = await readJsonBody(request);
+      statusCode = 200;
+      sendJson(response, 200, await configureCloudflare(body));
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/api/cloudflare/domain') {
+      const body = await readJsonBody(request);
+      statusCode = 200;
+      sendJson(response, 200, await setCloudflareDomain(body));
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/api/cloudflare/enable') {
+      const instances = await listInstances();
+      statusCode = 200;
+      sendJson(response, 200, await enableCloudflare(instances));
+      return;
+    }
+
+    if (method === 'POST' && url.pathname === '/api/cloudflare/disable') {
+      statusCode = 200;
+      sendJson(response, 200, await disableCloudflare());
       return;
     }
 

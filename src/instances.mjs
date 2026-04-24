@@ -150,6 +150,37 @@ function getUrls(instance) {
   };
 }
 
+async function enhanceWithProxyUrls(instance) {
+  try {
+    const { getInstanceProxyUrls } = await import('./proxy.mjs');
+    const proxyUrls = await getInstanceProxyUrls(instance);
+    if (proxyUrls) {
+      instance.proxyFrontendUrl = proxyUrls.frontendUrl;
+      instance.proxyApiUrl = proxyUrls.apiUrl;
+    }
+  } catch { }
+
+  try {
+    const { getInstanceNgrokUrls } = await import('./ngrok.mjs');
+    const ngrokUrls = await getInstanceNgrokUrls(instance.id);
+    if (ngrokUrls) {
+      instance.proxyFrontendUrl = ngrokUrls.frontendUrl;
+      instance.proxyApiUrl = ngrokUrls.apiUrl;
+    }
+  } catch { }
+
+  try {
+    const { getInstanceCloudflareUrls } = await import('./cloudflare.mjs');
+    const cfUrls = await getInstanceCloudflareUrls(instance.id);
+    if (cfUrls) {
+      instance.proxyFrontendUrl = cfUrls.frontendUrl;
+      instance.proxyApiUrl = cfUrls.apiUrl;
+    }
+  } catch { }
+
+  return instance;
+}
+
 function parseComposeJson(output) {
   const trimmed = output.trim();
   if (!trimmed) return [];
@@ -242,10 +273,13 @@ async function writeEnvFile(instance) {
   const sourceDir = await ensureAmbrosiaSourceDir();
   const phoenixChain = resolvePhoenixChain(instance.phoenixChain);
   const phoenixAutoLiquidityOff = resolvePhoenixAutoLiquidityOff(instance.phoenixAutoLiquidityOff);
+  const publicApiUrl = 'http://ambrosia:9154';
+
   const envLines = [
     `INSTANCE_ID=${instance.id}`,
     `CLIENT_PORT=${instance.clientPort}`,
     `API_PORT=${instance.apiPort}`,
+    `NEXT_PUBLIC_API_URL=${publicApiUrl}`,
     `PHOENIX_PORT=${instance.phoenixPort}`,
     `PHOENIX_CHAIN=${phoenixChain}`,
     `PHOENIX_AUTO_LIQUIDITY=${phoenixAutoLiquidityOff ? 'off' : ''}`,
@@ -321,13 +355,18 @@ function decorateInstance(instance, runtimeStatus = instance.status || 'unknown'
   };
 }
 
+async function decorateInstanceWithProxy(instance, runtimeStatus = instance.status || 'unknown') {
+  const decorated = decorateInstance(instance, runtimeStatus);
+  return enhanceWithProxyUrls(decorated);
+}
+
 export async function listInstances() {
   const registry = await readRegistry();
   const instances = [];
 
   for (const instance of registry.instances) {
     const status = await inspectRuntimeStatus(instance);
-    instances.push(decorateInstance(instance, status));
+    instances.push(await decorateInstanceWithProxy(instance, status));
   }
 
   return instances.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
@@ -340,7 +379,7 @@ export async function getInstanceDiagnostics(instanceId) {
   try {
     const { stdout } = await runCompose(instance, ['ps', '--all', '--format', 'json']);
     services = parseComposeJson(stdout);
-  } catch { /* docker compose ps may fail if not running */ }
+  } catch { }
 
   const normalizedServices = await Promise.all(
     services.map(async (service) => {
@@ -444,6 +483,23 @@ export async function createInstance(payload, options = {}) {
   }
 
   reportProgress({ step: 'completed', message: 'Instance is ready', progress: 100, instanceId: id });
+
+  try {
+    const { addInstanceToProxy } = await import('./proxy.mjs');
+    const allInstances = registry.instances;
+    await addInstanceToProxy(instance, allInstances);
+  } catch { }
+
+  try {
+    const { addInstanceTunnels } = await import('./ngrok.mjs');
+    await addInstanceTunnels(instance, registry.instances);
+  } catch { }
+
+  try {
+    const { addInstanceToCloudflare } = await import('./cloudflare.mjs');
+    await addInstanceToCloudflare(instance, registry.instances);
+  } catch { }
+
   return decorateInstance(instance, 'running');
 }
 
@@ -455,6 +511,12 @@ export async function startInstance(instanceId, options = {}) {
   await runCompose(instance, ['start']);
   instance.status = 'running';
   await writeRegistry(registry);
+
+  try {
+    const { addInstanceToProxy } = await import('./proxy.mjs');
+    await addInstanceToProxy(instance, registry.instances);
+  } catch { }
+
   reportProgress({ step: 'completed', message: 'Instance is running', progress: 100, instanceId });
   return decorateInstance(instance, 'running');
 }
@@ -467,6 +529,12 @@ export async function stopInstance(instanceId, options = {}) {
   await runCompose(instance, ['stop']);
   instance.status = 'stopped';
   await writeRegistry(registry);
+
+  try {
+    const { removeInstanceFromProxy } = await import('./proxy.mjs');
+    await removeInstanceFromProxy(instanceId, registry.instances);
+  } catch { }
+
   reportProgress({ step: 'completed', message: 'Instance is stopped', progress: 100, instanceId });
   return decorateInstance(instance, 'stopped');
 }
@@ -487,6 +555,12 @@ export async function rebuildInstance(instanceId, options = {}) {
   await runCompose(instance, ['up', '-d', '--build', '--force-recreate']);
   instance.status = 'running';
   await writeRegistry(registry);
+
+  try {
+    const { addInstanceToProxy } = await import('./proxy.mjs');
+    await addInstanceToProxy(instance, registry.instances);
+  } catch { }
+
   reportProgress({ step: 'completed', message: 'Instance rebuilt successfully', progress: 100, instanceId });
   return decorateInstance(instance, 'running');
 }
@@ -524,6 +598,12 @@ export async function toggleInstanceAutoLiquidity(instanceId, enabled, options =
 
   instance.status = 'running';
   await writeRegistry(registry);
+
+  try {
+    const { addInstanceToProxy } = await import('./proxy.mjs');
+    await addInstanceToProxy(instance, registry.instances);
+  } catch { }
+
   reportProgress({
     step: 'completed',
     message: `Instance switched to ${nextValue ? 'manual' : 'auto'} liquidity`,
@@ -565,6 +645,12 @@ export async function switchInstancePhoenixChain(instanceId, phoenixChain, optio
 
   instance.status = 'running';
   await writeRegistry(registry);
+
+  try {
+    const { addInstanceToProxy } = await import('./proxy.mjs');
+    await addInstanceToProxy(instance, registry.instances);
+  } catch { }
+
   reportProgress({
     step: 'completed',
     message: `Instance switched to ${nextChain}`,
@@ -581,6 +667,22 @@ export async function deleteInstance(instanceId, options = {}) {
   reportProgress({ step: 'removing_registry', message: 'Removing instance from inventory', progress: 20, instanceId });
   registry.instances = registry.instances.filter((entry) => entry.id !== instanceId);
   await writeRegistry(registry);
+
+  try {
+    const { removeInstanceFromProxy } = await import('./proxy.mjs');
+    await removeInstanceFromProxy(instanceId, registry.instances);
+  } catch { }
+
+  try {
+    const { removeInstanceTunnels } = await import('./ngrok.mjs');
+    await removeInstanceTunnels(instanceId, registry.instances);
+  } catch { }
+
+  try {
+    const { removeInstanceFromCloudflare } = await import('./cloudflare.mjs');
+    await removeInstanceFromCloudflare(instanceId, registry.instances);
+  } catch { }
+
   reportProgress({ step: 'removing_containers', message: 'Removing containers and volumes', progress: 65, instanceId });
   await runCompose(instance, ['down', '-v']);
   await rm(getInstanceDirectory(instanceId), { recursive: true, force: true });

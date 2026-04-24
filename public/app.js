@@ -27,6 +27,32 @@ const diagnosticsContent = document.querySelector("#diagnostics-content");
 const diagnosticsServicesBar = document.querySelector("#diagnostics-services-bar");
 const diagnosticsRefreshBtn = document.querySelector("#diagnostics-refresh");
 const diagnosticsAutorefreshBtn = document.querySelector("#diagnostics-autorefresh");
+const proxyForm = document.querySelector("#proxy-form");
+const proxyDomainInput = document.querySelector("#proxy-domain");
+const proxyEmailInput = document.querySelector("#proxy-email");
+const proxyFeedback = document.querySelector("#proxy-feedback");
+const proxyStatusBadges = document.querySelector("#proxy-status-badges");
+const proxyRefreshButton = document.querySelector("#proxy-refresh-button");
+const proxyRenewButton = document.querySelector("#proxy-renew-button");
+const tabNgrok = document.querySelector("#tab-ngrok");
+const tabNginx = document.querySelector("#tab-nginx");
+const panelNgrok = document.querySelector("#panel-ngrok");
+const panelNginx = document.querySelector("#panel-nginx");
+const ngrokForm = document.querySelector("#ngrok-form");
+const ngrokAuthtokenInput = document.querySelector("#ngrok-authtoken");
+const ngrokFeedback = document.querySelector("#ngrok-feedback");
+const ngrokStatusBadges = document.querySelector("#ngrok-status-badges");
+const ngrokEnableButton = document.querySelector("#ngrok-enable-button");
+const ngrokDisableButton = document.querySelector("#ngrok-disable-button");
+const tabCloudflare = document.querySelector("#tab-cloudflare");
+const panelCloudflare = document.querySelector("#panel-cloudflare");
+const cloudflareForm = document.querySelector("#cloudflare-form");
+const cloudflareTokenInput = document.querySelector("#cloudflare-token");
+const cloudflareDomainInput = document.querySelector("#cloudflare-domain");
+const cloudflareFeedback = document.querySelector("#cloudflare-feedback");
+const cloudflareStatusBadges = document.querySelector("#cloudflare-status-badges");
+const cloudflareEnableButton = document.querySelector("#cloudflare-enable-button");
+const cloudflareDisableButton = document.querySelector("#cloudflare-disable-button");
 const THEME_STORAGE_KEY = "ambrosia-admin-theme";
 let instancesCache = [];
 let jobsCache = [];
@@ -179,11 +205,18 @@ function renderInstanceCard(instance) {
   const liquidityLabel = instance.phoenixAutoLiquidityOff ? "Auto liquidity" : "Manual liquidity";
   const liquidityNext = instance.phoenixAutoLiquidityOff ? false : true;
 
+  const displayUrl = instance.proxyFrontendUrl || instance.frontendUrl;
+  const displayApiUrl = instance.proxyApiUrl || instance.apiUrl;
+
   const jobMeta = activeJob
     ? `<div class="instance-card-progress">
          <div class="instance-card-progress-bar" style="width:${Math.max(6, activeJob.progress || 0)}%"></div>
        </div>
        <div class="instance-job">${escapeHtml(activeJob.message || formatActionLabel(activeJob.action))}</div>`
+    : "";
+
+  const proxyBadge = instance.proxyFrontendUrl
+    ? '<span class="badge badge-good">https</span>'
     : "";
 
   return `
@@ -197,18 +230,19 @@ function renderInstanceCard(instance) {
           ${statusBadge(status)}
           ${statusBadge(instance.phoenixChain || "mainnet")}
           ${statusBadge(instance.phoenixAutoLiquidityOff ? "manual liquidity" : "auto liquidity")}
+          ${proxyBadge}
         </div>
       </div>
 
       ${jobMeta}
 
       <div class="instance-card-urls">
-        <a href="${escapeHtml(instance.frontendUrl)}" target="_blank" rel="noreferrer" class="instance-url instance-url-frontend">
+        <a href="${escapeHtml(displayUrl)}" target="_blank" rel="noreferrer" class="instance-url instance-url-frontend">
           <span class="instance-url-label">Frontend</span>
-          <span class="instance-url-value">${escapeHtml(instance.frontendUrl)}</span>
+          <span class="instance-url-value">${escapeHtml(displayUrl)}</span>
         </a>
         <div class="instance-url-group">
-          <span class="instance-url-item"><span class="instance-url-label">API</span> <code>${escapeHtml(instance.apiUrl)}</code></span>
+          <span class="instance-url-item"><span class="instance-url-label">API</span> <code>${escapeHtml(displayApiUrl)}</code></span>
           <span class="instance-url-item"><span class="instance-url-label">Phoenixd</span> <code>${escapeHtml(instance.phoenixUrl)}</code></span>
         </div>
       </div>
@@ -217,7 +251,7 @@ function renderInstanceCard(instance) {
         <div class="action-group action-group-primary">
           <button data-action="open" data-id="${escapeHtml(instance.id)}" ${disabled}>Open</button>
           <button data-action="diagnostics" data-id="${escapeHtml(instance.id)}" class="secondary" ${disabled}>Logs</button>
-          <button data-action="qr" data-id="${escapeHtml(instance.id)}" data-url="${escapeHtml(instance.frontendUrl)}" data-name="${escapeHtml(instance.name)}" class="secondary" ${disabled}>QR</button>
+          <button data-action="qr" data-id="${escapeHtml(instance.id)}" data-url="${escapeHtml(displayUrl)}" data-name="${escapeHtml(instance.name)}" class="secondary" ${disabled}>QR</button>
           <button data-action="copy-local" data-id="${escapeHtml(instance.id)}" data-url="${escapeHtml(instance.localFrontendUrl)}" class="secondary" ${disabled}>Copy localhost</button>
         </div>
         <div class="action-group action-group-secondary">
@@ -635,9 +669,306 @@ themeToggle?.addEventListener("click", () => {
   applyTheme(nextTheme);
 });
 
+function setProxyFeedback(message, tone = "neutral") {
+  if (!proxyFeedback) return;
+  proxyFeedback.textContent = message;
+  proxyFeedback.dataset.tone = tone;
+}
+
+function setNgrokFeedback(message, tone = "neutral") {
+  if (!ngrokFeedback) return;
+  ngrokFeedback.textContent = message;
+  ngrokFeedback.dataset.tone = tone;
+}
+
+if (tabNgrok && tabNginx && tabCloudflare && panelNgrok && panelNginx && panelCloudflare) {
+  const allTabs = [tabCloudflare, tabNgrok, tabNginx];
+  const allPanels = [panelCloudflare, panelNgrok, panelNginx];
+
+  function switchTab(activeTab, activePanel) {
+    allTabs.forEach((t) => t.classList.remove("active"));
+    allPanels.forEach((p) => p.hidden = true);
+    activeTab.classList.add("active");
+    activePanel.hidden = false;
+  }
+
+  tabCloudflare.addEventListener("click", () => switchTab(tabCloudflare, panelCloudflare));
+  tabNgrok.addEventListener("click", () => switchTab(tabNgrok, panelNgrok));
+  tabNginx.addEventListener("click", () => switchTab(tabNginx, panelNginx));
+}
+
+async function loadNgrokStatus() {
+  try {
+    const response = await fetch("/api/ngrok");
+    const ngrok = await response.json();
+    if (!response.ok) return;
+
+    if (ngrokStatusBadges) {
+      const badges = [];
+      if (!ngrok.installed) {
+        badges.push('<span class="badge badge-bad">ngrok not installed</span>');
+      } else if (ngrok.enabled) {
+        badges.push('<span class="badge badge-good">Ngrok enabled</span>');
+      } else {
+        badges.push('<span class="badge badge-muted">Ngrok disabled</span>');
+      }
+      if (ngrok.running) badges.push('<span class="badge badge-good">Tunnels active</span>');
+      if (ngrok.authtoken) badges.push('<span class="badge badge-muted">Token configured</span>');
+      badges.push(`<span class="badge badge-muted">Limit: ${ngrok.maxTunnels || 3} tunnels (free plan)</span>`);
+      ngrokStatusBadges.innerHTML = badges.join("");
+    }
+
+    if (ngrok.tunnels && Object.keys(ngrok.tunnels).length > 0) {
+      const tunnelList = Object.entries(ngrok.tunnels).map(([name, url]) => {
+        return `<span class="instance-url-item"><span class="instance-url-label">${escapeHtml(name)}</span> <code>${escapeHtml(url)}</code></span>`;
+      }).join("");
+      ngrokStatusBadges.innerHTML += `<div class="ngrok-tunnel-list">${tunnelList}</div>`;
+    }
+  } catch { /* ignore */ }
+}
+
+if (ngrokForm) {
+  ngrokForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const authtoken = ngrokAuthtokenInput?.value?.trim();
+    if (!authtoken) {
+      setNgrokFeedback("Authtoken is required", "bad");
+      return;
+    }
+    try {
+      setNgrokFeedback("Configuring ngrok...", "neutral");
+      const response = await fetch("/api/ngrok/configure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ authtoken }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Configuration failed");
+      setNgrokFeedback("Ngrok configured. Start tunnels to expose instances.", "good");
+      ngrokAuthtokenInput.value = "";
+      await loadNgrokStatus();
+    } catch (error) {
+      setNgrokFeedback(error.message, "bad");
+    }
+  });
+}
+
+if (ngrokEnableButton) {
+  ngrokEnableButton.addEventListener("click", async () => {
+    try {
+      setNgrokFeedback("Starting ngrok tunnels...", "neutral");
+      const response = await fetch("/api/ngrok/enable", { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Failed to start");
+      setNgrokFeedback("Tunnels started", "good");
+      await Promise.all([loadNgrokStatus(), fetchInstances()]);
+    } catch (error) {
+      setNgrokFeedback(error.message, "bad");
+    }
+  });
+}
+
+if (ngrokDisableButton) {
+  ngrokDisableButton.addEventListener("click", async () => {
+    try {
+      setNgrokFeedback("Stopping ngrok tunnels...", "neutral");
+      const response = await fetch("/api/ngrok/disable", { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Failed to stop");
+      setNgrokFeedback("Tunnels stopped", "good");
+      await Promise.all([loadNgrokStatus(), fetchInstances()]);
+    } catch (error) {
+      setNgrokFeedback(error.message, "bad");
+    }
+  });
+}
+
+async function loadProxyStatus() {
+  try {
+    const response = await fetch("/api/proxy");
+    const proxy = await response.json();
+    if (!response.ok) return;
+
+    if (proxyStatusBadges) {
+      const badges = [];
+      if (proxy.enabled) badges.push('<span class="badge badge-good">HTTPS enabled</span>');
+      else badges.push('<span class="badge badge-muted">HTTPS disabled</span>');
+      if (proxy.running) badges.push('<span class="badge badge-good">Nginx running</span>');
+      else badges.push('<span class="badge badge-muted">Nginx stopped</span>');
+      if (proxy.baseDomain) badges.push(`<span class="badge badge-muted">${escapeHtml(proxy.baseDomain)}</span>`);
+      proxyStatusBadges.innerHTML = badges.join("");
+    }
+
+    if (proxyDomainInput && proxy.baseDomain) proxyDomainInput.value = proxy.baseDomain;
+    if (proxyEmailInput && proxy.email) proxyEmailInput.value = proxy.email;
+  } catch { /* ignore */ }
+}
+
+if (proxyForm) {
+  proxyForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const baseDomain = proxyDomainInput?.value?.trim();
+    const email = proxyEmailInput?.value?.trim();
+
+    if (!baseDomain || !email) {
+      setProxyFeedback("Domain and email are required", "bad");
+      return;
+    }
+
+    try {
+      setProxyFeedback("Configuring proxy and requesting certificate...", "neutral");
+      const response = await fetch("/api/proxy/configure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ baseDomain, email }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Configuration failed");
+      setProxyFeedback("Proxy configured and certificate obtained", "good");
+      await Promise.all([loadProxyStatus(), fetchInstances()]);
+    } catch (error) {
+      setProxyFeedback(error.message, "bad");
+    }
+  });
+}
+
+if (proxyRefreshButton) {
+  proxyRefreshButton.addEventListener("click", async () => {
+    try {
+      setProxyFeedback("Refreshing proxy configuration...", "neutral");
+      const response = await fetch("/api/proxy/refresh", { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Refresh failed");
+      setProxyFeedback("Proxy configuration refreshed", "good");
+      await fetchInstances();
+    } catch (error) {
+      setProxyFeedback(error.message, "bad");
+    }
+  });
+}
+
+if (proxyRenewButton) {
+  proxyRenewButton.addEventListener("click", async () => {
+    try {
+      setProxyFeedback("Renewing SSL certificates...", "neutral");
+      const response = await fetch("/api/proxy/renew-certs", { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Renewal failed");
+      setProxyFeedback("Certificates renewed successfully", "good");
+    } catch (error) {
+      setProxyFeedback(error.message, "bad");
+    }
+  });
+}
+
+function setCloudflareFeedback(message, tone = "neutral") {
+  if (!cloudflareFeedback) return;
+  cloudflareFeedback.textContent = message;
+  cloudflareFeedback.dataset.tone = tone;
+}
+
+async function loadCloudflareStatus() {
+  try {
+    const response = await fetch("/api/cloudflare");
+    const cf = await response.json();
+    if (!response.ok) return;
+
+    if (cloudflareStatusBadges) {
+      const badges = [];
+      if (!cf.installed) {
+        badges.push('<span class="badge badge-bad">cloudflared not installed</span>');
+      } else if (cf.enabled) {
+        badges.push('<span class="badge badge-good">Cloudflare enabled</span>');
+      } else {
+        badges.push('<span class="badge badge-muted">Cloudflare disabled</span>');
+      }
+      if (cf.running) badges.push('<span class="badge badge-good">Tunnel active</span>');
+      if (cf.tunnelToken) badges.push('<span class="badge badge-muted">Token configured</span>');
+      if (cf.domain) badges.push(`<span class="badge badge-muted">${escapeHtml(cf.domain)}</span>`);
+      badges.push('<span class="badge badge-muted">Free, unlimited tunnels</span>');
+      cloudflareStatusBadges.innerHTML = badges.join("");
+    }
+
+    if (cloudflareDomainInput && cf.domain) cloudflareDomainInput.value = cf.domain;
+  } catch { /* ignore */ }
+}
+
+if (cloudflareForm) {
+  cloudflareForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const tunnelToken = cloudflareTokenInput?.value?.trim();
+    const domain = cloudflareDomainInput?.value?.trim();
+
+    if (!tunnelToken && !domain) {
+      setCloudflareFeedback("Tunnel token or domain is required", "bad");
+      return;
+    }
+
+    try {
+      if (tunnelToken) {
+        setCloudflareFeedback("Configuring Cloudflare tunnel...", "neutral");
+        const res = await fetch("/api/cloudflare/configure", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tunnelToken }),
+        });
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error || "Configuration failed");
+      }
+
+      if (domain) {
+        setCloudflareFeedback("Setting domain...", "neutral");
+        const res = await fetch("/api/cloudflare/domain", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ domain }),
+        });
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error || "Failed to set domain");
+      }
+
+      setCloudflareFeedback("Cloudflare tunnel configured", "good");
+      cloudflareTokenInput.value = "";
+      await Promise.all([loadCloudflareStatus(), fetchInstances()]);
+    } catch (error) {
+      setCloudflareFeedback(error.message, "bad");
+    }
+  });
+}
+
+if (cloudflareEnableButton) {
+  cloudflareEnableButton.addEventListener("click", async () => {
+    try {
+      setCloudflareFeedback("Starting Cloudflare tunnel...", "neutral");
+      const response = await fetch("/api/cloudflare/enable", { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Failed to start");
+      setCloudflareFeedback("Tunnel started", "good");
+      await Promise.all([loadCloudflareStatus(), fetchInstances()]);
+    } catch (error) {
+      setCloudflareFeedback(error.message, "bad");
+    }
+  });
+}
+
+if (cloudflareDisableButton) {
+  cloudflareDisableButton.addEventListener("click", async () => {
+    try {
+      setCloudflareFeedback("Stopping Cloudflare tunnel...", "neutral");
+      const response = await fetch("/api/cloudflare/disable", { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Failed to stop");
+      setCloudflareFeedback("Tunnel stopped", "good");
+      await Promise.all([loadCloudflareStatus(), fetchInstances()]);
+    } catch (error) {
+      setCloudflareFeedback(error.message, "bad");
+    }
+  });
+}
+
 applyTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
 
-Promise.all([fetchInstances(), fetchJobs()])
+Promise.all([fetchInstances(), fetchJobs(), loadProxyStatus(), loadNgrokStatus(), loadCloudflareStatus()])
   .then(() => {
     if (getActiveJobs().length > 0) {
       ensureJobsPolling();

@@ -60,6 +60,85 @@
       </section>
 
       <section class="card">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Public access</p>
+            <h2>HTTPS tunnels</h2>
+          </div>
+          <div class="tunnel-tabs">
+            <button type="button" id="tab-cloudflare" class="tunnel-tab active">Cloudflare Tunnel</button>
+            <button type="button" id="tab-ngrok" class="tunnel-tab">Ngrok</button>
+            <button type="button" id="tab-nginx" class="tunnel-tab">Nginx + Let's Encrypt</button>
+          </div>
+        </div>
+
+        <div id="panel-cloudflare" class="tunnel-panel">
+          <div id="cloudflare-status-badges"></div>
+          <form id="cloudflare-form" class="proxy-form">
+            <div class="proxy-fields">
+              <div class="field-group">
+                <label for="cloudflare-token">Tunnel token</label>
+                <input id="cloudflare-token" name="tunnelToken" type="password" placeholder="Paste your Cloudflare tunnel token" />
+              </div>
+              <div class="field-group">
+                <label for="cloudflare-domain">Domain</label>
+                <input id="cloudflare-domain" name="domain" type="text" placeholder="ambrosia.example.com" />
+              </div>
+            </div>
+            <p class="proxy-hint">Create a tunnel in <a href="https://one.dash.cloudflare.com/" target="_blank" rel="noreferrer">Cloudflare Zero Trust</a> → Networks → Tunnels → Create tunnel. Copy the tunnel token. Then add CNAME records for each instance pointing to the tunnel.</p>
+            <div class="proxy-actions">
+              <button type="submit">Save and start tunnel</button>
+              <button type="button" id="cloudflare-enable-button" class="secondary">Start tunnel</button>
+              <button type="button" id="cloudflare-disable-button" class="secondary">Stop tunnel</button>
+            </div>
+          </form>
+          <p id="cloudflare-feedback" class="feedback" aria-live="polite"></p>
+        </div>
+
+        <div id="panel-ngrok" class="tunnel-panel" hidden>
+          <div id="ngrok-status-badges"></div>
+          <form id="ngrok-form" class="proxy-form">
+            <div class="proxy-fields">
+              <div class="field-group">
+                <label for="ngrok-authtoken">Authtoken</label>
+                <input id="ngrok-authtoken" name="authtoken" type="password" placeholder="Paste your ngrok authtoken" />
+              </div>
+            </div>
+            <p class="proxy-hint">Get your authtoken at <a href="https://dashboard.ngrok.com/get-started/your-authtoken" target="_blank" rel="noreferrer">dashboard.ngrok.com</a>. Free plan: 1 tunnel. Paid plan: multiple tunnels with stable domains.</p>
+            <div class="proxy-actions">
+              <button type="submit">Save and connect</button>
+              <button type="button" id="ngrok-enable-button" class="secondary">Start tunnels</button>
+              <button type="button" id="ngrok-disable-button" class="secondary">Stop tunnels</button>
+            </div>
+          </form>
+          <p id="ngrok-feedback" class="feedback" aria-live="polite"></p>
+        </div>
+
+        <div id="panel-nginx" class="tunnel-panel" hidden>
+          <div id="proxy-status-badges"></div>
+          <form id="proxy-form" class="proxy-form">
+            <div class="proxy-fields">
+              <div class="field-group">
+                <label for="proxy-domain">Base domain</label>
+                <input id="proxy-domain" name="baseDomain" type="text" placeholder="ambrosia.example.com" />
+              </div>
+              <div class="field-group">
+                <label for="proxy-email">Let's Encrypt email</label>
+                <input id="proxy-email" name="email" type="email" placeholder="admin@example.com" />
+              </div>
+            </div>
+            <p class="proxy-hint">Set up a wildcard DNS record (<code>*.ambrosia.example.com</code>) pointing to this server's IP before configuring.</p>
+            <div class="proxy-actions">
+              <button type="submit" id="proxy-save-button">Save and obtain certificate</button>
+              <button type="button" id="proxy-refresh-button" class="secondary">Refresh Nginx</button>
+              <button type="button" id="proxy-renew-button" class="secondary">Renew certificates</button>
+            </div>
+          </form>
+          <p id="proxy-feedback" class="feedback" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <section class="card">
         <div id="job-panel" class="job-panel" hidden>
           <div class="job-topline">
             <div>
