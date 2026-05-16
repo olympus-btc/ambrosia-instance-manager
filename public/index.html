@@ -180,11 +180,25 @@
             <div class="modal-actions">
               <button class="secondary" type="submit" value="cancel">Close</button>
               <button id="copy-link-button" type="button">Copy URL</button>
+              <button id="print-card-button" type="button" class="secondary">Print card</button>
             </div>
           </div>
         </div>
       </form>
     </dialog>
+
+    <div id="print-card" class="print-card" aria-hidden="true">
+      <div class="print-card-inner">
+        <div class="print-card-brand">
+          <img src="/ambrosia-icon.png?v=2" alt="" class="print-card-icon" />
+          <span class="print-card-brand-name">Ambrosia</span>
+        </div>
+        <h3 id="print-card-name" class="print-card-name"></h3>
+        <img id="print-card-qr" alt="QR code" class="print-card-qr" />
+        <p id="print-card-url" class="print-card-url"></p>
+        <p class="print-card-hint">Scan to start selling</p>
+      </div>
+    </div>
 
     <dialog id="confirm-dialog" class="modal-shell">
       <form method="dialog" class="modal-card confirm-card">

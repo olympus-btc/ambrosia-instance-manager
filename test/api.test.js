@@ -158,6 +158,26 @@ describe('API endpoints', () => {
     });
   });
 
+  describe('GET /app.js', () => {
+    it('returns Last-Modified and honors If-Modified-Since', async () => {
+      const firstResponse = await fetch(`${baseUrl}/app.js`);
+      expect(firstResponse.status).toBe(200);
+      expect(firstResponse.headers.get('content-type')).toContain('application/javascript');
+
+      const lastModified = firstResponse.headers.get('last-modified');
+      expect(lastModified).toBeTruthy();
+
+      const cachedResponse = await fetch(`${baseUrl}/app.js`, {
+        headers: { 'If-Modified-Since': lastModified },
+      });
+
+      expect(cachedResponse.status).toBe(304);
+      expect(cachedResponse.headers.get('cache-control')).toBe('no-cache');
+      expect(cachedResponse.headers.get('last-modified')).toBe(lastModified);
+      expect(await cachedResponse.text()).toBe('');
+    });
+  });
+
   describe('POST /api/instances', () => {
     it('creates an instance and returns a job', async () => {
       const res = await api('/api/instances', {

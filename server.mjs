@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -176,13 +176,30 @@ async function readJsonBody(request) {
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
 
-async function serveStatic(response, assetPath) {
+async function serveStatic(request, response, assetPath) {
   const extension = path.extname(assetPath);
+  const fileStat = await stat(assetPath);
+  const modifiedTimeMs = Math.floor(fileStat.mtimeMs / 1000) * 1000;
+  const lastModified = new Date(modifiedTimeMs).toUTCString();
+  const ifModifiedSince = request.headers['if-modified-since'];
+
+  if (ifModifiedSince && new Date(ifModifiedSince).getTime() >= modifiedTimeMs) {
+    response.writeHead(304, {
+      'Cache-Control': 'no-cache',
+      'Last-Modified': lastModified,
+    });
+    response.end();
+    return 304;
+  }
+
   const fileContents = await readFile(assetPath);
   response.writeHead(200, {
     'Content-Type': MIME_TYPES[extension] || 'application/octet-stream',
+    'Cache-Control': 'no-cache',
+    'Last-Modified': lastModified,
   });
   response.end(fileContents);
+  return 200;
 }
 
 const server = createServer(async (request, response) => {
@@ -392,14 +409,12 @@ const server = createServer(async (request, response) => {
     }
 
     if (method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
-      statusCode = 200;
-      await serveStatic(response, path.join(publicDir, 'index.html'));
+      statusCode = await serveStatic(request, response, path.join(publicDir, 'index.html'));
       return;
     }
 
     if (method === 'GET' && ['/app.js', '/styles.css', '/ambrosia-icon.png'].includes(url.pathname)) {
-      statusCode = 200;
-      await serveStatic(response, path.join(publicDir, url.pathname.slice(1)));
+      statusCode = await serveStatic(request, response, path.join(publicDir, url.pathname.slice(1)));
       return;
     }
 

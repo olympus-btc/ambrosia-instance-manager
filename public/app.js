@@ -16,6 +16,10 @@ const qrTitle = document.querySelector("#qr-title");
 const qrImage = document.querySelector("#qr-image");
 const qrLink = document.querySelector("#qr-link");
 const copyLinkButton = document.querySelector("#copy-link-button");
+const printCardButton = document.querySelector("#print-card-button");
+const printCardName = document.querySelector("#print-card-name");
+const printCardQr = document.querySelector("#print-card-qr");
+const printCardUrl = document.querySelector("#print-card-url");
 const confirmDialog = document.querySelector("#confirm-dialog");
 const confirmTitle = document.querySelector("#confirm-title");
 const confirmMessage = document.querySelector("#confirm-message");
@@ -249,7 +253,7 @@ function renderInstanceCard(instance) {
 
       <div class="instance-card-actions">
         <div class="action-group action-group-primary">
-          <button data-action="open" data-id="${escapeHtml(instance.id)}" ${disabled}>Open</button>
+          <button data-action="open" data-id="${escapeHtml(instance.id)}" data-url="${escapeHtml(displayUrl)}" ${disabled}>Open</button>
           <button data-action="diagnostics" data-id="${escapeHtml(instance.id)}" class="secondary" ${disabled}>Logs</button>
           <button data-action="qr" data-id="${escapeHtml(instance.id)}" data-url="${escapeHtml(displayUrl)}" data-name="${escapeHtml(instance.name)}" class="secondary" ${disabled}>QR</button>
           <button data-action="copy-local" data-id="${escapeHtml(instance.id)}" data-url="${escapeHtml(instance.localFrontendUrl)}" class="secondary" ${disabled}>Copy localhost</button>
@@ -344,11 +348,21 @@ function openQrDialog(name, url) {
   qrTitle.textContent = `${name} access`;
   qrLink.href = url;
   qrLink.textContent = url;
-  qrImage.src = `/api/qr?text=${encodeURIComponent(url)}`;
+  const qrSrc = `/api/qr?text=${encodeURIComponent(url)}`;
+  qrImage.src = qrSrc;
   qrImage.alt = `QR code for ${name}`;
   copyLinkButton.dataset.url = url;
+
+  printCardName.textContent = name;
+  printCardQr.src = qrSrc;
+  printCardUrl.textContent = url;
+
   qrDialog.showModal();
 }
+
+printCardButton.addEventListener("click", () => {
+  window.print();
+});
 
 function openConfirmDialog({ title, message, confirmLabel = "Confirm" }) {
   confirmTitle.textContent = title;
@@ -534,9 +548,9 @@ tableWrapper.addEventListener("click", async (event) => {
 
   try {
     if (action === "open") {
-      const rowLink = button.closest("tr")?.querySelector("a");
-      if (rowLink) {
-        window.open(rowLink.href, "_blank", "noopener,noreferrer");
+      const targetUrl = button.dataset.url;
+      if (targetUrl) {
+        window.open(targetUrl, "_blank", "noopener,noreferrer");
       }
       return;
     }
