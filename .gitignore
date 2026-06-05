@@ -4,3 +4,8 @@ node_modules/
 proxy/conf.d/upstream.map
 proxy/conf.d/api-upstream.map
 proxy/conf.d/instances/
+
+# AI Generated Files
+CLAUDE.md
+.claude
+*PLAN.md
