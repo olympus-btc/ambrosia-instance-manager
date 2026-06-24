@@ -16,10 +16,6 @@ function getConfigPath() {
   return path.join(dataRoot(), 'cloudflare-config.json');
 }
 
-function getCredentialsPath() {
-  return path.join(dataRoot(), 'cloudflared-credentials.json');
-}
-
 function createHttpError(statusCode, message) {
   const error = new Error(message);
   error.statusCode = statusCode;
@@ -91,11 +87,9 @@ async function startTunnel() {
     throw createHttpError(400, 'Tunnel token not configured');
   }
 
-  const credentialsPath = getCredentialsPath();
-
   return new Promise((resolve, reject) => {
     tunnelProcess = spawn('cloudflared', [
-      'tunnel', '--credentials-file', credentialsPath, 'run',
+      'tunnel', 'run', '--token', config.tunnelToken,
     ], {
       cwd: managerRoot,
       detached: false,
@@ -208,16 +202,6 @@ export async function configureCloudflare({ tunnelToken }) {
     });
     tunnelInfo = JSON.parse(stdout);
   } catch { }
-
-  const credentialsPath = getCredentialsPath();
-  try {
-    await runCommand('cloudflared', ['tunnel', 'token', '--output', credentialsPath], {
-      env: { ...process.env, TUNNEL_TOKEN: token },
-    });
-  } catch {
-    await mkdir(path.dirname(credentialsPath), { recursive: true });
-    await writeFile(credentialsPath, JSON.stringify({ AccountTag: '', TunnelSecret: token, TunnelID: '' }));
-  }
 
   config.tunnelToken = token;
   config.enabled = true;
