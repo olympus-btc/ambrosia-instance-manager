@@ -113,8 +113,6 @@ async function generateYamlConfig(instances) {
     });
   }
 
-  // Persist which instance IDs actually got tunnel slots so getInstanceNgrokUrls
-  // can gate on this list and not assign a URL to instances outside the limit.
   config.tunneledInstanceIds = tunnelEntries.map((t) => t.name);
   await writeConfig(config);
 
@@ -236,9 +234,6 @@ async function refreshTunnelConfig(instances) {
 
   await generateYamlConfig(instances);
 
-  // Only restart ngrok if it is already actively running.
-  // Do NOT auto-start just because 'enabled' is persisted — the user
-  // must explicitly click "Start Tunnels" to bring ngrok up.
   const running = await isNgrokRunning();
   if (!running) return;
 
@@ -302,17 +297,14 @@ export async function enableNgrok(instances) {
   config.enabled = true;
   await writeConfig(config);
 
-  // Generate the YAML config for running instances.
   await generateYamlConfig(instances);
 
-  // Stop any stale process before starting fresh.
   const running = await isNgrokRunning();
   if (running) {
     await stopNgrok();
     await new Promise((r) => setTimeout(r, 1000));
   }
 
-  // Always start ngrok here — this is an explicit user action.
   const hasRunning = instances.some((i) => i.status === 'running');
   if (hasRunning) {
     await startNgrok();
@@ -347,8 +339,6 @@ export async function getInstanceNgrokUrls(instanceId) {
   const config = await readConfig();
   if (!config.enabled || !config.authtoken) return null;
 
-  // Only return a URL for instances that were explicitly assigned a tunnel slot.
-  // This prevents instances beyond the maxTunnels limit from inheriting a URL.
   const tunneledIds = config.tunneledInstanceIds || [];
   if (!tunneledIds.includes(instanceId)) return null;
 

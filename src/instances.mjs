@@ -151,8 +151,6 @@ function getUrls(instance) {
 }
 
 async function enhanceWithProxyUrls(instance) {
-  // Clean slate: reset proxy fields before checking providers.
-  // This ensures that if a tunnel is stopped, we don't show "stuck" URLs.
   instance.proxyFrontendUrl = null;
   instance.proxyApiUrl = null;
 
@@ -178,9 +176,7 @@ async function enhanceWithProxyUrls(instance) {
       if (ngrokUrls?.frontendUrl) instance.proxyFrontendUrl = ngrokUrls.frontendUrl;
       if (ngrokUrls?.apiUrl) instance.proxyApiUrl = ngrokUrls.apiUrl;
     }
-  } catch {
-    // console.error(`[Instance ${instance.id}] Error fetching Ngrok URLs:`);
-  }
+  } catch { }
 
   try {
     const { getInstanceCloudflareUrls } = await import('./cloudflare.mjs');
