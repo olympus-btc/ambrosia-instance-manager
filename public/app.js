@@ -758,16 +758,13 @@ if (ngrokEnableButton) {
       setNgrokFeedback("Tunnels started — fetching URLs...", "neutral");
       await loadNgrokStatus();
 
-      // Ngrok needs a moment to register tunnels before the local API reflects them.
-      // Poll fetchInstances a few times until proxy URLs appear.
       let attempts = 0;
       const maxAttempts = 6;
-      const pollInterval = 2000; // ms between attempts
+      const pollInterval = 2000;
 
       const poll = async () => {
         await fetchInstances();
         attempts++;
-        // Check if any instance now has a proxy URL
         const hasProxyUrl = instancesCache.some((i) => i.proxyFrontendUrl);
         if (!hasProxyUrl && attempts < maxAttempts) {
           setTimeout(poll, pollInterval);
