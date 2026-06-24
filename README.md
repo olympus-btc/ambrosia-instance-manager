@@ -63,10 +63,11 @@ INSTANCE_DATA_DIR=~/.local/share/ambrosia-instance-manager npm start
 
 ## What it does
 
-- Creates isolated Ambrosia instances with unique frontend, API, and Phoenixd ports
+- Creates isolated Ambrosia instances with a unified gateway port (Reverse Proxy)
+- Automatically routes `/api` to the backend and root to the frontend
 - Lists local instances and their runtime status
 - Starts, stops, rebuilds, and deletes instances
-- Exposes each instance with the laptop LAN IP so QR sharing works on the same network
+- Exposes each instance with a single public URL (Ngrok/Cloudflare compatible)
 - Tracks background jobs with progress so actions stay blocked until they finish
 
 By default, instance metadata is stored in:

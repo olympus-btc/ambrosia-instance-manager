@@ -86,6 +86,7 @@ async function getTunnelUrls() {
     for (const tunnel of data.tunnels || []) {
       urls[tunnel.name] = tunnel.public_url;
     }
+    console.log('[Ngrok] Active tunnels discovered:', Object.keys(urls).join(', ') || 'none');
     return urls;
   } catch {
     return {};
@@ -99,25 +100,25 @@ async function generateYamlConfig(instances) {
   const maxTunnels = config.maxTunnels || 3;
   const tunnelEntries = [];
 
-  for (const instance of instances) {
-    if (config.excludedInstances && config.excludedInstances.includes(instance.id)) continue;
+  const runningInstances = instances.filter((i) => i.status === 'running');
 
-    if (tunnelEntries.length + 1 > maxTunnels) break;
+  for (const instance of runningInstances) {
+    if (config.excludedInstances && config.excludedInstances.includes(instance.id)) continue;
+    if (tunnelEntries.length >= maxTunnels) break;
+
     tunnelEntries.push({
-      name: `${instance.id}-client`,
+      name: `${instance.id}`,
       proto: 'http',
       addr: String(instance.clientPort),
     });
-
-    if (tunnelEntries.length + 1 > maxTunnels) break;
-    tunnelEntries.push({
-      name: `${instance.id}-api`,
-      proto: 'http',
-      addr: String(instance.apiPort),
-    });
   }
 
-  if (tunnelEntries.length === 0) {
+  // Persist which instance IDs actually got tunnel slots so getInstanceNgrokUrls
+  // can gate on this list and not assign a URL to instances outside the limit.
+  config.tunneledInstanceIds = tunnelEntries.map((t) => t.name);
+  await writeConfig(config);
+
+  if (runningInstances.length === 0 || tunnelEntries.length === 0) {
     const yaml = `version: "2"
 authtoken: ${config.authtoken}
 web_addr: 127.0.0.1:4040
@@ -231,17 +232,21 @@ async function stopNgrok() {
 
 async function refreshTunnelConfig(instances) {
   const config = await readConfig();
-  if (!config.enabled || !config.authtoken) return;
+  if (!config.authtoken) return;
 
   await generateYamlConfig(instances);
 
+  // Only restart ngrok if it is already actively running.
+  // Do NOT auto-start just because 'enabled' is persisted — the user
+  // must explicitly click "Start Tunnels" to bring ngrok up.
   const running = await isNgrokRunning();
-  if (running) {
-    await stopNgrok();
-    await new Promise((r) => setTimeout(r, 1000));
-  }
+  if (!running) return;
 
-  if (instances.length > 0) {
+  await stopNgrok();
+  await new Promise((r) => setTimeout(r, 1000));
+
+  const hasRunning = instances.some((i) => i.status === 'running');
+  if (hasRunning) {
     await startNgrok();
   }
 }
@@ -276,7 +281,7 @@ export async function configureNgrok({ authtoken, maxTunnels }) {
   const config = await readConfig();
   config.authtoken = authtoken.trim();
   config.enabled = true;
-  config.maxTunnels = maxTunnels || 3;
+  config.maxTunnels = parseInt(maxTunnels, 10) || 3;
   config.excludedInstances = config.excludedInstances || [];
   await writeConfig(config);
 
@@ -297,8 +302,20 @@ export async function enableNgrok(instances) {
   config.enabled = true;
   await writeConfig(config);
 
-  if (instances.length > 0) {
-    await refreshTunnelConfig(instances);
+  // Generate the YAML config for running instances.
+  await generateYamlConfig(instances);
+
+  // Stop any stale process before starting fresh.
+  const running = await isNgrokRunning();
+  if (running) {
+    await stopNgrok();
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+
+  // Always start ngrok here — this is an explicit user action.
+  const hasRunning = instances.some((i) => i.status === 'running');
+  if (hasRunning) {
+    await startNgrok();
   }
 
   return config;
@@ -330,17 +347,21 @@ export async function getInstanceNgrokUrls(instanceId) {
   const config = await readConfig();
   if (!config.enabled || !config.authtoken) return null;
 
+  // Only return a URL for instances that were explicitly assigned a tunnel slot.
+  // This prevents instances beyond the maxTunnels limit from inheriting a URL.
+  const tunneledIds = config.tunneledInstanceIds || [];
+  if (!tunneledIds.includes(instanceId)) return null;
+
   const running = await isNgrokRunning();
   if (!running) return null;
 
   const urls = await getTunnelUrls();
-  const clientUrl = urls[`${instanceId}-client`] || null;
-  const apiUrl = urls[`${instanceId}-api`] || null;
+  const clientUrl = urls[instanceId] || null;
 
-  if (!clientUrl && !apiUrl) return null;
+  if (!clientUrl) return null;
 
   return {
     frontendUrl: clientUrl,
-    apiUrl,
+    apiUrl: clientUrl,
   };
 }
