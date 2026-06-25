@@ -717,7 +717,7 @@ async function loadNgrokStatus() {
       badges.push(`<span class="badge badge-muted">Limit: ${ngrok.maxTunnels || 3} tunnels (free plan)</span>`);
       ngrokStatusBadges.innerHTML = badges.join("");
     }
-  } catch { /* ignore */ }
+  } catch { }
 }
 
 if (ngrokForm) {
@@ -813,7 +813,7 @@ async function loadProxyStatus() {
 
     if (proxyDomainInput && proxy.baseDomain) proxyDomainInput.value = proxy.baseDomain;
     if (proxyEmailInput && proxy.email) proxyEmailInput.value = proxy.email;
-  } catch { /* ignore */ }
+  } catch { }
 }
 
 if (proxyForm) {
@@ -902,7 +902,7 @@ async function loadCloudflareStatus() {
     }
 
     if (cloudflareDomainInput && cf.domain) cloudflareDomainInput.value = cf.domain;
-  } catch { /* ignore */ }
+  } catch { }
 }
 
 if (cloudflareForm) {

@@ -151,31 +151,38 @@ function getUrls(instance) {
 }
 
 async function enhanceWithProxyUrls(instance) {
+  instance.proxyFrontendUrl = null;
+  instance.proxyApiUrl = null;
+
   try {
     const { getInstanceProxyUrls } = await import('./proxy.mjs');
     const proxyUrls = await getInstanceProxyUrls(instance);
-    if (proxyUrls) {
-      instance.proxyFrontendUrl = proxyUrls.frontendUrl;
-      instance.proxyApiUrl = proxyUrls.apiUrl;
-    }
+    if (proxyUrls?.frontendUrl) instance.proxyFrontendUrl = proxyUrls.frontendUrl;
+    if (proxyUrls?.apiUrl) instance.proxyApiUrl = proxyUrls.apiUrl;
   } catch { }
 
   try {
     const { getInstanceNgrokUrls } = await import('./ngrok.mjs');
     const ngrokUrls = await getInstanceNgrokUrls(instance.id);
+
     if (ngrokUrls) {
+      console.log(`[Instance ${instance.id}] Ngrok URLs: Client=${ngrokUrls.frontendUrl}, API=${ngrokUrls.apiUrl}`);
+    }
+
+    if (ngrokUrls?.frontendUrl && ngrokUrls?.apiUrl && ngrokUrls.frontendUrl === ngrokUrls.apiUrl) {
       instance.proxyFrontendUrl = ngrokUrls.frontendUrl;
-      instance.proxyApiUrl = ngrokUrls.apiUrl;
+      instance.proxyApiUrl = null;
+    } else {
+      if (ngrokUrls?.frontendUrl) instance.proxyFrontendUrl = ngrokUrls.frontendUrl;
+      if (ngrokUrls?.apiUrl) instance.proxyApiUrl = ngrokUrls.apiUrl;
     }
   } catch { }
 
   try {
     const { getInstanceCloudflareUrls } = await import('./cloudflare.mjs');
     const cfUrls = await getInstanceCloudflareUrls(instance.id);
-    if (cfUrls) {
-      instance.proxyFrontendUrl = cfUrls.frontendUrl;
-      instance.proxyApiUrl = cfUrls.apiUrl;
-    }
+    if (cfUrls?.frontendUrl) instance.proxyFrontendUrl = cfUrls.frontendUrl;
+    if (cfUrls?.apiUrl) instance.proxyApiUrl = cfUrls.apiUrl;
   } catch { }
 
   return instance;
@@ -273,7 +280,7 @@ async function writeEnvFile(instance) {
   const sourceDir = await ensureAmbrosiaSourceDir();
   const phoenixChain = resolvePhoenixChain(instance.phoenixChain);
   const phoenixAutoLiquidityOff = resolvePhoenixAutoLiquidityOff(instance.phoenixAutoLiquidityOff);
-  const publicApiUrl = 'http://ambrosia:9154';
+  const publicApiUrl = '/api';
 
   const envLines = [
     `INSTANCE_ID=${instance.id}`,
@@ -289,6 +296,7 @@ async function writeEnvFile(instance) {
     `PHOENIX_VOLUME=${instance.projectName}-phoenix-data`,
     `AMBROSIA_SERVER_CONTEXT=${path.join(sourceDir, 'server')}`,
     `AMBROSIA_CLIENT_CONTEXT=${path.join(sourceDir, 'client')}`,
+    'INTERNAL_ORIGIN=http://gateway',
   ];
 
   await mkdir(getInstanceDirectory(instance.id), { recursive: true });
@@ -474,6 +482,13 @@ export async function createInstance(payload, options = {}) {
       instanceId: id,
     });
     await runCompose(instance, ['up', '-d', '--build']);
+
+    const finalRegistry = await readRegistry();
+    const finalInstance = finalRegistry.instances.find((entry) => entry.id === id);
+    if (finalInstance) {
+      finalInstance.status = 'running';
+      await writeRegistry(finalRegistry);
+    }
   } catch (error) {
     await runCompose(instance, ['down', '-v']).catch(() => undefined);
     await rm(getInstanceDirectory(id), { recursive: true, force: true }).catch(() => undefined);
@@ -517,6 +532,11 @@ export async function startInstance(instanceId, options = {}) {
     await addInstanceToProxy(instance, registry.instances);
   } catch { }
 
+  try {
+    const { addInstanceTunnels } = await import('./ngrok.mjs');
+    await addInstanceTunnels(instance, registry.instances);
+  } catch { }
+
   reportProgress({ step: 'completed', message: 'Instance is running', progress: 100, instanceId });
   return decorateInstance(instance, 'running');
 }
@@ -533,6 +553,11 @@ export async function stopInstance(instanceId, options = {}) {
   try {
     const { removeInstanceFromProxy } = await import('./proxy.mjs');
     await removeInstanceFromProxy(instanceId, registry.instances);
+  } catch { }
+
+  try {
+    const { removeInstanceTunnels } = await import('./ngrok.mjs');
+    await removeInstanceTunnels(instanceId, registry.instances);
   } catch { }
 
   reportProgress({ step: 'completed', message: 'Instance is stopped', progress: 100, instanceId });
