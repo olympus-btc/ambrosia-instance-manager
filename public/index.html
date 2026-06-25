@@ -103,6 +103,10 @@
                 <label for="ngrok-authtoken">Authtoken</label>
                 <input id="ngrok-authtoken" name="authtoken" type="password" placeholder="Paste your ngrok authtoken" />
               </div>
+              <div class="field-group" style="flex: 0 0 120px; min-width: 120px;">
+                <label for="ngrok-max-tunnels">Max Tunnels</label>
+                <input id="ngrok-max-tunnels" name="maxTunnels" type="number" value="3" min="1" max="50" />
+              </div>
             </div>
             <p class="proxy-hint">Get your authtoken at <a href="https://dashboard.ngrok.com/get-started/your-authtoken" target="_blank" rel="noreferrer">dashboard.ngrok.com</a>. Free plan: 1 tunnel. Paid plan: multiple tunnels with stable domains.</p>
             <div class="proxy-actions">

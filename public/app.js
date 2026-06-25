@@ -238,11 +238,10 @@ function renderInstanceCard(instance) {
 
       <div class="instance-card-urls">
         <a href="${escapeHtml(displayUrl)}" target="_blank" rel="noreferrer" class="instance-url instance-url-frontend">
-          <span class="instance-url-label">Frontend</span>
+          <span class="instance-url-label">Unified Access (App & API)</span>
           <span class="instance-url-value">${escapeHtml(displayUrl)}</span>
         </a>
         <div class="instance-url-group">
-          <span class="instance-url-item"><span class="instance-url-label">API</span> <code>${escapeHtml(displayApiUrl)}</code></span>
           <span class="instance-url-item"><span class="instance-url-label">Phoenixd</span> <code>${escapeHtml(instance.phoenixUrl)}</code></span>
         </div>
       </div>
@@ -534,9 +533,10 @@ tableWrapper.addEventListener("click", async (event) => {
 
   try {
     if (action === "open") {
-      const rowLink = button.closest("tr")?.querySelector("a");
-      if (rowLink) {
-        window.open(rowLink.href, "_blank", "noopener,noreferrer");
+      const card = button.closest(".instance-card");
+      const link = card?.querySelector(".instance-url-frontend");
+      if (link) {
+        window.open(link.href, "_blank", "noopener,noreferrer");
       }
       return;
     }
@@ -717,13 +717,6 @@ async function loadNgrokStatus() {
       badges.push(`<span class="badge badge-muted">Limit: ${ngrok.maxTunnels || 3} tunnels (free plan)</span>`);
       ngrokStatusBadges.innerHTML = badges.join("");
     }
-
-    if (ngrok.tunnels && Object.keys(ngrok.tunnels).length > 0) {
-      const tunnelList = Object.entries(ngrok.tunnels).map(([name, url]) => {
-        return `<span class="instance-url-item"><span class="instance-url-label">${escapeHtml(name)}</span> <code>${escapeHtml(url)}</code></span>`;
-      }).join("");
-      ngrokStatusBadges.innerHTML += `<div class="ngrok-tunnel-list">${tunnelList}</div>`;
-    }
   } catch { /* ignore */ }
 }
 
@@ -731,6 +724,8 @@ if (ngrokForm) {
   ngrokForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const authtoken = ngrokAuthtokenInput?.value?.trim();
+    const maxTunnels = parseInt(document.querySelector("#ngrok-max-tunnels")?.value || "3", 10);
+
     if (!authtoken) {
       setNgrokFeedback("Authtoken is required", "bad");
       return;
@@ -740,7 +735,7 @@ if (ngrokForm) {
       const response = await fetch("/api/ngrok/configure", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ authtoken }),
+        body: JSON.stringify({ authtoken, maxTunnels }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Configuration failed");
@@ -760,8 +755,25 @@ if (ngrokEnableButton) {
       const response = await fetch("/api/ngrok/enable", { method: "POST" });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Failed to start");
-      setNgrokFeedback("Tunnels started", "good");
-      await Promise.all([loadNgrokStatus(), fetchInstances()]);
+      setNgrokFeedback("Tunnels started — fetching URLs...", "neutral");
+      await loadNgrokStatus();
+
+      let attempts = 0;
+      const maxAttempts = 6;
+      const pollInterval = 2000;
+
+      const poll = async () => {
+        await fetchInstances();
+        attempts++;
+        const hasProxyUrl = instancesCache.some((i) => i.proxyFrontendUrl);
+        if (!hasProxyUrl && attempts < maxAttempts) {
+          setTimeout(poll, pollInterval);
+        } else {
+          setNgrokFeedback("Tunnels active", "good");
+        }
+      };
+
+      setTimeout(poll, 1500);
     } catch (error) {
       setNgrokFeedback(error.message, "bad");
     }
